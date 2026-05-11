@@ -50,24 +50,9 @@ end
 
 -- ── Initialisation ────────────────────────────────────────────────────────
 
-local function ActivateGuild()
-    local currentGuild = GH:GetGuildName()
-    if not currentGuild or currentGuild == "No Guild" or currentGuild == "" then return false end
-    GH.DB:SetActiveGuild(currentGuild)
-    -- Flush any messages captured in-memory before _activeGuild was set (login-time race:
-    -- CLUB_MESSAGE_ADDED or _LoadFromClubCache may fire before PLAYER_LOGIN resolves the guild name).
-    for _, msg in ipairs(GH.Chat.guildMsgs) do
-        GH.DB:AddGuildMessage(msg)
-    end
-    GH.Chat:_LoadSavedGuildHistory()
-    if GH.UI and GH.UI.RefreshTeamsGroupList then GH.UI:RefreshTeamsGroupList() end
-    return true
-end
-
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 initFrame:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" and addonName == GH.ADDON_NAME then
         GH:Initialize()
@@ -89,20 +74,15 @@ initFrame:SetScript("OnEvent", function(_, event, addonName)
             -- Activate the per-guild DB namespace for this character's guild.
             -- All group/chat/event data is now scoped under GuildHubDB.guilds[guildName],
             -- so characters in different guilds never share data.
-            -- GetGuildInfo("player") can return nil at PLAYER_LOGIN on some builds;
-            -- GUILD_ROSTER_UPDATE (registered above) fires once the data is confirmed
-            -- ready and acts as a fallback to ensure _activeGuild is always set.
-            ActivateGuild()
+            local currentGuild = GH:GetGuildName()
+            if currentGuild and currentGuild ~= "No Guild" and currentGuild ~= "" then
+                GH.DB:SetActiveGuild(currentGuild)
+                -- Reload the guild chat ring from the now-active namespace.
+                -- The initial load in Chat:Initialize() ran before the guild was known.
+                GH.Chat:_LoadSavedGuildHistory()
+            end
         end
         SetupGuildFrameReplacement()
-    elseif event == "GUILD_ROSTER_UPDATE" then
-        -- Fallback: set active guild if PLAYER_LOGIN didn't manage to (GetGuildInfo
-        -- returned nil at that point).  Always unregister after first roster update
-        -- so this doesn't fire on every roster change.
-        initFrame:UnregisterEvent("GUILD_ROSTER_UPDATE")
-        if not GH.DB._activeGuild then
-            ActivateGuild()
-        end
     end
 end)
 
@@ -130,16 +110,16 @@ local function CreateMinimapButton()
     btn:RegisterForDrag("LeftButton")
     btn:RegisterForClicks("LeftButtonUp")
 
-    -- 20x20 icon centered in the button; TrackingBorder covers the square corners
-    local icon = btn:CreateTexture(nil, "BACKGROUND")
-    icon:SetSize(20, 20)
-    icon:SetPoint("CENTER")
-    icon:SetTexture("Interface/AddOns/GuildHub/icon")
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture("Interface/Icons/Achievement_Guild_PerkHappyHour")
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 
+    -- Circular mask / highlight ring
     local ring = btn:CreateTexture(nil, "OVERLAY")
-    ring:SetSize(53, 53)
-    ring:SetPoint("CENTER")
+    ring:SetAllPoints()
     ring:SetTexture("Interface/Minimap/MiniMap-TrackingBorder")
+    ring:SetAlpha(0.8)
 
     btn:SetScript("OnEnter", function()
         GameTooltip:SetOwner(btn, "ANCHOR_LEFT")
@@ -213,7 +193,6 @@ local function HandleSlash(msg)
     elseif msg == "reset" then
         rawset(_G, "GuildHubDB", nil)
         GH.DB._activeGuild = nil
-        GH.DB._activeChar  = nil
         GH.DB:Initialize()
         local currentGuild = GH:GetGuildName()
         if currentGuild and currentGuild ~= "No Guild" and currentGuild ~= "" then

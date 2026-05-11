@@ -337,7 +337,8 @@ function UI:CreateMainWindow()
 
     -- ── Sidebar: Guild News ─────────────────────────────────────────────────
     -- Bottom of last nav button from sidebar top: (N-1)*44 + 12 + 40
-    local NEWS_BASE     = (#TABS - 1) * 44 + 12 + 40   -- = 228
+    local NEWS_BASE    = (#TABS - 1) * 44 + 12 + 40   -- = 228
+    local NEWS_ITEM_H  = 38
     local NEWS_MAX_ROWS = 6
 
     local newsDiv = sidebar:CreateTexture(nil, "ARTWORK")
@@ -360,9 +361,12 @@ function UI:CreateMainWindow()
 
     local newsRows = {}
     for rowI = 1, NEWS_MAX_ROWS do
+        local yBase = -(NEWS_BASE + 37 + (rowI - 1) * NEWS_ITEM_H)
+
         local row = CreateFrame("Button", nil, sidebar)
-        row:SetPoint("TOPLEFT",  sidebar, "TOPLEFT",  0, 0)
-        row:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, 0)
+        row:SetPoint("TOPLEFT",  sidebar, "TOPLEFT",  0, yBase)
+        row:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, yBase)
+        row:SetHeight(NEWS_ITEM_H)
 
         local rowHover = row:CreateTexture(nil, "BACKGROUND")
         rowHover:SetAllPoints()
@@ -384,8 +388,8 @@ function UI:CreateMainWindow()
         row.nameFS = rowNameFS
 
         local rowDescFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        rowDescFS:SetPoint("TOPLEFT", row, "TOPLEFT", 6, -18)
-        rowDescFS:SetWidth(S.SIDEBAR_W - 10)
+        rowDescFS:SetPoint("TOPLEFT",  row, "TOPLEFT",  6, -18)
+        rowDescFS:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -18)
         rowDescFS:SetJustifyH("LEFT")
         rowDescFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
         row.descFS = rowDescFS
@@ -393,10 +397,8 @@ function UI:CreateMainWindow()
         row:Hide()
         newsRows[rowI] = row
     end
-    win.newsRows    = newsRows
-    win.newsBuffer  = {}  -- {name, desc, iconTex} entries, newest first
-    win.newsSidebar = sidebar
-    win.newsStartY  = -(NEWS_BASE + 37)
+    win.newsRows   = newsRows
+    win.newsBuffer = {}  -- {name, desc, iconTex} entries, newest first
 
     local newsEventFrame = CreateFrame("Frame")
     newsEventFrame:RegisterEvent("GUILD_NEWS_UPDATE")
@@ -741,27 +743,11 @@ function UI:RefreshGuildNews()
     if not win or not win.newsRows then return end
     local rows    = win.newsRows
     local emptyFS = win.newsEmptyFS
-    local sidebar = win.newsSidebar
-    local startY  = win.newsStartY
 
     for _, row in ipairs(rows) do row:Hide() end
 
-    local rowIdx   = 0
-    local currentY = startY
-    local shown    = {}  -- desc strings already displayed, used to deduplicate
-
-    local function PlaceRow(row, nameStr, desc, iconTex)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT",  sidebar, "TOPLEFT",  0, currentY)
-        row:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, currentY)
-        row.nameFS:SetText(nameStr)
-        row.descFS:SetText(desc)
-        row.iconTex:SetTexture(iconTex)
-        row:Show()
-        local rowH = math.max(38, row.descFS:GetStringHeight() + 22)
-        row:SetHeight(rowH)
-        currentY = currentY - rowH - 2
-    end
+    local rowIdx = 0
+    local shown  = {}  -- desc strings already displayed, used to deduplicate
 
     -- ── Source 1: WoW guild news API (items, may be empty until GuildFrame loads) ──
     local ok, numNews = pcall(GetNumGuildNews)
@@ -817,8 +803,12 @@ function UI:RefreshGuildNews()
 
                 if not shown[desc] then
                     rowIdx = rowIdx + 1
-                    PlaceRow(rows[rowIdx], nameStr, desc, iconTex)
+                    local row = rows[rowIdx]
+                    row.nameFS:SetText(nameStr)
+                    row.descFS:SetText(desc)
+                    row.iconTex:SetTexture(iconTex)
                     shown[desc] = true
+                    row:Show()
                 end
             end
         end
@@ -829,9 +819,12 @@ function UI:RefreshGuildNews()
         if rowIdx >= #rows then break end
         if not shown[entry.desc] then
             rowIdx = rowIdx + 1
-            PlaceRow(rows[rowIdx], entry.name or "", entry.desc or "",
-                entry.iconTex or "Interface/Icons/Achievement_General")
+            local row = rows[rowIdx]
+            row.nameFS:SetText(entry.name or "")
+            row.descFS:SetText(entry.desc or "")
+            row.iconTex:SetTexture(entry.iconTex or "Interface/Icons/Achievement_General")
             shown[entry.desc] = true
+            row:Show()
         end
     end
 

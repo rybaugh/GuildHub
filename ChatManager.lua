@@ -7,15 +7,10 @@ local Chat = GH.Chat
 
 local MSG_TYPE_CHAT        = "CM"
 local MSG_TYPE_CREATE      = "CC"
-local MSG_TYPE_LINK           = "CLK"
-local MSG_TYPE_LINK_DELETE    = "CLKD"
-local MSG_TYPE_LINK_LABEL     = "CLKN"
-local MSG_TYPE_LINK_TARGET    = "CLKT"
-local MSG_TYPE_JOIN_REQUEST    = "CLKR"
-local MSG_TYPE_JOIN_REQ_CLEAR  = "CLKRC"
-local MSG_TYPE_COMMUNITY_RELAY = "CLKM"
-local MSG_TYPE_HISTORY_REQ     = "GHREQ"   -- login: request today's messages from peers
-local MSG_TYPE_HISTORY_SYNC    = "GHSYN"   -- response: one saved message per packet
+local MSG_TYPE_LINK        = "CLK"
+local MSG_TYPE_LINK_DELETE = "CLKD"
+local MSG_TYPE_LINK_LABEL  = "CLKN"
+local MSG_TYPE_LINK_TARGET = "CLKT"
 local SEPARATOR            = "\30"
 
 local GUILD_ID   = "__GUILD__"
@@ -31,11 +26,7 @@ Chat.officerMsgs            = {}
 Chat.communityMsgs          = {}
 Chat._linkedClubs           = {}   -- [tostring(clubId)] = {streamId, label, id}
 Chat._lastSentCommunityMsgs = {}   -- [tostring(clubId)] = {sender, text}
-Chat._relayedMids           = {}   -- mid → true; prevents double-relay
-Chat._relayedMidsList       = {}   -- ordered insertion list for eviction (capped at 200)
 Chat.unread                 = {}
-Chat._historyRequested      = false   -- one request per session
-Chat._servedHistoryFor      = {}      -- [requesterName]=true; prevents double-response
 
 local MAX_RING            = 2000
 local MAX_COMMUNITY_RING  = 2000
@@ -63,14 +54,12 @@ local function NotifyGuildMsg(entry)
     local buf       = entry.isOfficer and Chat.officerMsgs or Chat.guildMsgs
     AppendRing(buf, entry)
     Chat.unread[channelId] = (Chat.unread[channelId] or 0) + 1
-    if entry.isOfficer then
-        -- Officer messages also appear in guild chat tab, so bump that unread too.
-        Chat.unread[GUILD_ID] = (Chat.unread[GUILD_ID] or 0) + 1
-    end
     if GH.UI and GH.UI.UpdateChatBadge then GH.UI:UpdateChatBadge() end
     if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(channelId) end
-    if entry.isOfficer and GH.UI and GH.UI.OnChatMessage then
-        GH.UI:OnChatMessage(GUILD_ID)
+    -- Guild messages also appear in the cross-guild view when any links are configured.
+    if not entry.isOfficer and HasAnyLinks() then
+        Chat.unread[XGUILD_ID] = (Chat.unread[XGUILD_ID] or 0) + 1
+        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
     end
 end
 
@@ -122,8 +111,6 @@ function Chat:Initialize()
     gf:RegisterEvent("CHAT_MSG_OFFICER")
     gf:RegisterEvent("CLUB_MESSAGE_ADDED")
     gf:RegisterEvent("CLUB_MESSAGE_HISTORY_RECEIVED")
-    gf:RegisterEvent("CLUB_INVITATION_ADDED_FOR_SELF")
-    gf:RegisterEvent("CLUB_INVITATION_REMOVED_FOR_SELF")
     gf:SetScript("OnEvent", function(_, event, ...)
         if event == "CHAT_MSG_GUILD" or event == "CHAT_MSG_OFFICER" then
             local isOfficer = (event == "CHAT_MSG_OFFICER")
@@ -151,14 +138,9 @@ function Chat:Initialize()
                 Chat:_LoadFromClubCache(clubId, streamId)
             else
                 local li = Chat._linkedClubs[tostring(clubId)]
-                if li and tostring(streamId) == tostring(li.streamId) then
+                if li and streamId == li.streamId then
                     Chat:_LoadCommunityHistory(clubId, streamId, li)
                 end
-            end
-        elseif event == "CLUB_INVITATION_ADDED_FOR_SELF"
-            or event == "CLUB_INVITATION_REMOVED_FOR_SELF" then
-            if GH.UI and GH.UI.UpdateXGuildNotice then
-                GH.UI:UpdateXGuildNotice()
             end
         end
     end)
@@ -257,7 +239,7 @@ function Chat:_OnClubMessageAdded(clubId, streamId, messageId)
 
     -- ── Linked community stream ───────────────────────────────────────────
     local li = Chat._linkedClubs[tostring(clubId)]
-    if li and tostring(streamId) == tostring(li.streamId) then
+    if li and streamId == li.streamId then
         Chat:_OnCommunityMessageAdded(clubId, streamId, messageId, li)
     end
 end
@@ -300,54 +282,9 @@ function Chat:_OnCommunityMessageAdded(clubId, streamId, messageId, li)
     GH:Debug("Chat", "_OnCommunityMessageAdded: [%s] %s: %s", li.label, sender, body)
     AppendRing(Chat.communityMsgs, entry, MAX_COMMUNITY_RING)
     GH.DB:AddCommunityMessage(entry)
-    Chat.unread[GUILD_ID] = (Chat.unread[GUILD_ID] or 0) + 1
+    Chat.unread[XGUILD_ID] = (Chat.unread[XGUILD_ID] or 0) + 1
     if GH.UI and GH.UI.UpdateChatBadge then GH.UI:UpdateChatBadge() end
-    if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(GUILD_ID) end
-
-    -- Relay to guildmates who are not subscribed to this community.
-    -- Random jitter (0–1.5 s) means only the first client to fire actually sends.
-    if mid then
-        local capturedEntry = entry
-        local capturedClubId = clubId
-        C_Timer.After(math.random() * 1.5, function()
-            Chat:_MaybeRelayCommunityMsg(capturedClubId, capturedEntry)
-        end)
-    end
-end
-
-function Chat:_MaybeRelayCommunityMsg(clubId, entry)
-    local mid = entry.mid
-    if not mid then return end
-    -- If another client already broadcast this mid, the addon message will have
-    -- arrived and marked it seen before our timer fires. Bail out.
-    if Chat._relayedMids[mid] then return end
-
-    Chat._relayedMids[mid] = true
-    Chat._relayedMidsList[#Chat._relayedMidsList + 1] = mid
-    if #Chat._relayedMidsList > 200 then
-        Chat._relayedMids[table.remove(Chat._relayedMidsList, 1)] = nil
-    end
-
-    -- Truncate text so the full payload stays within 250 bytes.
-    -- Overhead: msgType(4) + 5 separators + clubId(≤18) + sender(≤12) + ts(10) + mid(16) ≈ 65
-    local text = entry.text
-    if #text > 184 then text = text:sub(1, 184) end
-
-    local payload = table.concat({
-        MSG_TYPE_COMMUNITY_RELAY,
-        tostring(clubId),
-        entry.sender,
-        tostring(entry.ts),
-        mid,
-        text,
-    }, SEPARATOR)
-    if #payload > 250 then return end
-
-    local C_ChatInfo = rawget(_G, "C_ChatInfo")
-    if C_ChatInfo then
-        C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
-        GH:Debug("Chat", "_MaybeRelayCommunityMsg: relayed mid=%s from [%s]", mid, entry.sourceLabel or "?")
-    end
+    if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(XGUILD_ID) end
 end
 
 -- ── Club discovery ────────────────────────────────────────────────────────
@@ -387,9 +324,6 @@ function Chat:FindGuildClub()
             if Chat.guildStreamId then
                 Chat:_LoadFromClubCache(Chat.guildClubId, Chat.guildStreamId)
                 Chat:_RequestMoreGuildHistory()
-                -- Ask online GuildHub peers for any messages from the last 24 h.
-                -- 6 s delay gives _LoadFromClubCache and ActivateGuild time to finish first.
-                C_Timer.After(6, function() Chat:RequestTodayHistory() end)
             end
             return
         end
@@ -569,7 +503,15 @@ function Chat:_LoadCommunityHistory(clubId, streamId, li)
     table.sort(Chat.communityMsgs, function(a, b) return a.ts < b.ts end)
 
     GH:Debug("Chat", "_LoadCommunityHistory [%s]: added %d msgs", li.label, #newEntries)
-    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
+end
+
+function Chat:LoadXGuildHistory()
+    Chat:_LoadSavedCommunityHistory()
+    for cid, li in pairs(Chat._linkedClubs) do
+        Chat:_LoadCommunityHistory(cid, li.streamId, li)
+    end
+    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
 end
 
 -- ── History ───────────────────────────────────────────────────────────────
@@ -577,18 +519,12 @@ end
 -- Called when the Guild Chat tab is opened or when history needs refreshing.
 function Chat:LoadGuildHistory()
     Chat:_LoadSavedGuildHistory()
-    if HasAnyLinks() then Chat:_LoadSavedCommunityHistory() end
     if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
     if Chat.guildClubId and Chat.guildStreamId then
         Chat:_LoadFromClubCache(Chat.guildClubId, Chat.guildStreamId)
         Chat:_RequestMoreGuildHistory()
     else
         Chat:FindGuildClub()
-    end
-    if HasAnyLinks() then
-        for clubId, li in pairs(Chat._linkedClubs) do
-            Chat:_LoadCommunityHistory(clubId, li.streamId, li)
-        end
     end
 end
 
@@ -641,6 +577,13 @@ function Chat:GetChannels()
     if GH:IsOfficer() then
         out[#out + 1] = { id = OFFICER_ID, name = "Officer", isOfficer = true }
     end
+    if HasAnyLinks() then
+        out[#out + 1] = {
+            id       = XGUILD_ID,
+            name     = GH.DB:GetCrossGuildLabel(),
+            isXGuild = true,
+        }
+    end
     local custom = {}
     for id, ch in pairs(GH.DB:GetChats()) do
         custom[#custom + 1] = { id = id, name = ch.name, members = ch.members }
@@ -689,9 +632,9 @@ end
 function Chat:SendMessage(channelId, text)
     if text == "" then return end
 
-    if channelId == GUILD_ID then
-        -- If a community send-target is configured, route there instead of guild chat.
-        -- C_Club.SendMessage is protected but safe here — called from a hardware event.
+    if channelId == XGUILD_ID then
+        -- Try to send to the configured community stream (C_Club.SendMessage is safe
+        -- here because we're called from an OnEnterPressed / OnClick hardware event).
         local sendTarget = GH.DB:GetCrossGuildSendTarget()
         if sendTarget then
             local li = Chat._linkedClubs[tostring(sendTarget)]
@@ -700,6 +643,7 @@ function Chat:SendMessage(channelId, text)
                 if C_Club and C_Club.SendMessage then
                     local ok = pcall(C_Club.SendMessage, sendTarget, li.streamId, text)
                     if ok then
+                        -- Optimistic local display; echo suppressed by _lastSentCommunityMsgs.
                         local cid = tostring(sendTarget)
                         Chat._lastSentCommunityMsgs[cid] = { sender = GH:GetPlayerName(), text = text }
                         local entry = {
@@ -711,13 +655,17 @@ function Chat:SendMessage(channelId, text)
                         }
                         AppendRing(Chat.communityMsgs, entry, MAX_COMMUNITY_RING)
                         GH.DB:AddCommunityMessage(entry)
-                        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+                        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
                         return
                     end
                 end
             end
         end
-        -- Default: send to own guild chat.
+        -- Fallback: send to own guild chat and let it surface in the merged view.
+        channelId = GUILD_ID
+    end
+
+    if channelId == GUILD_ID then
         local msg = { sender = GH:GetPlayerName(), text = text, ts = GH:GetTimestamp() }
         GH.DB:AddGuildMessage(msg)
         Chat._lastSentGuildMsg = msg
@@ -758,37 +706,28 @@ function Chat:SendMessage(channelId, text)
 end
 
 function Chat:GetMessages(channelId)
-    if channelId == GUILD_ID then
-        local gm    = Chat.guildMsgs
-        local om    = Chat.officerMsgs
-        local cm    = HasAnyLinks() and Chat.communityMsgs or {}
-        local omLen = #om
-        local cmLen = #cm
-        if omLen == 0 and cmLen == 0 then return gm end
-        -- Three-way linear merge (all arrays are sorted by ts).
+    if channelId == GUILD_ID   then return Chat.guildMsgs   end
+    if channelId == OFFICER_ID then return Chat.officerMsgs end
+    if channelId == XGUILD_ID  then
+        -- Linear merge of two independently-sorted arrays: O(n).
+        local gm, cm = Chat.guildMsgs, Chat.communityMsgs
         local result = {}
-        local gi, oi, ci = 1, 1, 1
-        while gi <= #gm or oi <= omLen or ci <= cmLen do
-            local gt = gi <= #gm   and gm[gi].ts or math.huge
-            local ot = oi <= omLen and om[oi].ts or math.huge
-            local ct = ci <= cmLen and cm[ci].ts or math.huge
-            if gt <= ot and gt <= ct then
+        local gi, ci = 1, 1
+        while gi <= #gm or ci <= #cm do
+            if gi <= #gm and (ci > #cm or gm[gi].ts <= cm[ci].ts) then
                 result[#result + 1] = gm[gi]; gi = gi + 1
-            elseif ot <= gt and ot <= ct then
-                result[#result + 1] = om[oi]; oi = oi + 1
             else
                 result[#result + 1] = cm[ci]; ci = ci + 1
             end
         end
         return result
     end
-    if channelId == OFFICER_ID then return Chat.officerMsgs end
     local ch = GH.DB:GetChat(channelId)
     return ch and ch.messages or {}
 end
 
 function Chat:IsMember(channelId, playerName)
-    if channelId == GUILD_ID or channelId == OFFICER_ID then return true end
+    if channelId == GUILD_ID or channelId == OFFICER_ID or channelId == XGUILD_ID then return true end
     -- Officers can see all custom channels (team chats and group channels).
     if playerName == GH:GetPlayerName() and GH:IsOfficer() then return true end
     local ch = GH.DB:GetChat(channelId)
@@ -880,172 +819,7 @@ function Chat:OnAddonMessage(payload, _)
     elseif msgType == MSG_TYPE_LINK_TARGET and #parts >= 2 then
         local target = parts[2]
         GH.DB:SetCrossGuildSendTarget(target ~= "" and target or nil)
-
-    elseif msgType == MSG_TYPE_COMMUNITY_RELAY and #parts >= 6 then
-        local relayClubId = parts[2]
-        local sender      = parts[3]
-        local ts          = tonumber(parts[4]) or GH:GetTimestamp()
-        local mid         = parts[5]
-        local text        = parts[6]
-
-        -- Mark seen so our own relay timer (if running) won't fire.
-        if not Chat._relayedMids[mid] then
-            Chat._relayedMids[mid] = true
-            Chat._relayedMidsList[#Chat._relayedMidsList + 1] = mid
-            if #Chat._relayedMidsList > 200 then
-                Chat._relayedMids[table.remove(Chat._relayedMidsList, 1)] = nil
-            end
-        end
-
-        -- Only display for members who are not already subscribed to this community
-        -- (subscribed members received it directly via CLUB_MESSAGE_ADDED).
-        if Chat:IsSubscribedToCommunity(relayClubId) then return end
-
-        local li = Chat._linkedClubs[tostring(relayClubId)]
-        if not li then return end
-
-        -- Dedup against recent ring.
-        local cid = tostring(relayClubId)
-        for i = math.max(1, #Chat.communityMsgs - 30), #Chat.communityMsgs do
-            local m = Chat.communityMsgs[i]
-            if m and m.mid == mid then return end
-            if m and m.communityId == cid and m.sender == sender and m.text == text then return end
-        end
-
-        local entry = {
-            sender      = sender,
-            text        = text,
-            ts          = ts,
-            mid         = mid,
-            communityId = cid,
-            sourceLabel = li.label,
-        }
-        AppendRing(Chat.communityMsgs, entry, MAX_COMMUNITY_RING)
-        GH.DB:AddCommunityMessage(entry)
-        Chat.unread[GUILD_ID] = (Chat.unread[GUILD_ID] or 0) + 1
-        if GH.UI and GH.UI.UpdateChatBadge then GH.UI:UpdateChatBadge() end
-        if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(GUILD_ID) end
-
-    elseif msgType == MSG_TYPE_JOIN_REQUEST and #parts >= 4 then
-        -- Only officers store and act on join requests.
-        if GH:IsOfficer() then
-            local clubId         = parts[2]
-            local communityLabel = parts[3]
-            local requesterName  = parts[4]
-            GH.DB:SaveJoinRequest(requesterName, {
-                clubId         = clubId,
-                communityLabel = communityLabel,
-                ts             = GH:GetTimestamp(),
-            })
-            if GH.UI and GH.UI._RefreshCommunityLinksDialog then
-                GH.UI:_RefreshCommunityLinksDialog()
-            end
-        end
-
-    elseif msgType == MSG_TYPE_JOIN_REQ_CLEAR and #parts >= 2 then
-        GH.DB:ClearJoinRequest(parts[2])
-        if GH.UI and GH.UI._RefreshCommunityLinksDialog then
-            GH.UI:_RefreshCommunityLinksDialog()
-        end
-
-    elseif msgType == MSG_TYPE_HISTORY_REQ and #parts >= 3 then
-        local requesterName = parts[2]
-        local sinceTs       = tonumber(parts[3]) or 0
-        Chat:_OnHistoryRequest(requesterName, sinceTs)
-
-    elseif msgType == MSG_TYPE_HISTORY_SYNC and #parts >= 5 then
-        local requesterName = parts[2]
-        local sender        = parts[3]
-        local ts            = tonumber(parts[4]) or 0
-        local text          = parts[5]
-        -- Mark this requester as served so our own pending jitter (if any) bails out.
-        if not Chat._servedHistoryFor[requesterName] then
-            Chat._servedHistoryFor[requesterName] = true
-        end
-        if ts == 0 or sender == "" or text == "" then return end
-        -- Dedup against recent ring entries.
-        local ringBuf = Chat.guildMsgs
-        for i = math.max(1, #ringBuf - 30), #ringBuf do
-            local m = ringBuf[i]
-            if m and m.sender == sender and m.text == text and m.ts == ts then return end
-        end
-        local entry = { sender = sender, text = text, ts = ts }
-        local added = GH.DB:AddGuildMessage(entry)
-        if added then
-            AppendRing(Chat.guildMsgs, entry)
-            table.sort(Chat.guildMsgs, function(a, b) return a.ts < b.ts end)
-            if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
-        end
     end
-end
-
--- ── P2P guild-chat history sync ───────────────────────────────────────────
--- On login, after FindGuildClub, we broadcast GHREQ to ask online GuildHub
--- clients for messages from the last 24 h that may not yet be in our C_Club
--- cache.  Only one peer responds (first jitter wins); others see the GHSYN
--- stream and cancel their own pending response.
-
-local MAX_HISTORY_SEND = 50   -- max messages sent per response
-
--- Sent once per session, ~6 s after the guild club is found.
-function Chat:RequestTodayHistory()
-    if Chat._historyRequested then return end
-    Chat._historyRequested = true
-    local sinceTs = GH:GetTimestamp() - 86400
-    local myName  = GH:GetPlayerName()
-    local payload = table.concat({MSG_TYPE_HISTORY_REQ, myName, tostring(sinceTs)}, SEPARATOR)
-    local C_ChatInfo = rawget(_G, "C_ChatInfo")
-    if C_ChatInfo and #payload <= 250 then
-        C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
-        GH:Debug("Chat", "RequestTodayHistory: sinceTs=%d", sinceTs)
-    end
-end
-
--- Received GHREQ from another client.  Schedule a response with jitter so
--- only the first timer to fire actually sends (others see the GHSYN stream
--- and set _servedHistoryFor before their timer fires).
-function Chat:_OnHistoryRequest(requesterName, sinceTs)
-    if requesterName == GH:GetPlayerName() then return end
-    if Chat._servedHistoryFor[requesterName] then return end
-    local jitter = math.random(500, 4500) / 1000
-    C_Timer.After(jitter, function()
-        Chat:_MaybeSendHistory(requesterName, sinceTs)
-    end)
-    GH:Debug("Chat", "_OnHistoryRequest: requester=%s jitter=%.1fs", requesterName, jitter)
-end
-
--- Fire after jitter; bail if another client already responded.
-function Chat:_MaybeSendHistory(requesterName, sinceTs)
-    if Chat._servedHistoryFor[requesterName] then return end
-    Chat._servedHistoryFor[requesterName] = true
-
-    local msgs = GH.DB:GetGuildMessages()
-    local toSend = {}
-    for _, msg in ipairs(msgs) do
-        if msg.ts >= sinceTs then toSend[#toSend + 1] = msg end
-    end
-    if #toSend == 0 then return end
-
-    local C_ChatInfo = rawget(_G, "C_ChatInfo")
-    if not C_ChatInfo then return end
-
-    -- Send at most MAX_HISTORY_SEND most-recent messages.
-    -- Format: GHSYN\30<requester>\30<sender>\30<ts>\30<text>
-    -- Header overhead ≈ 5+1+12+1+12+1+10+1 = 43 bytes → 207 bytes for text.
-    local startIdx = math.max(1, #toSend - MAX_HISTORY_SEND + 1)
-    for i = startIdx, #toSend do
-        local msg  = toSend[i]
-        local text = (msg.text or ""):sub(1, 200)
-        local payload = table.concat({
-            MSG_TYPE_HISTORY_SYNC, requesterName,
-            msg.sender or "", tostring(msg.ts), text,
-        }, SEPARATOR)
-        if #payload <= 250 then
-            C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
-        end
-    end
-    GH:Debug("Chat", "_MaybeSendHistory: %d msgs → %s",
-        math.min(#toSend, MAX_HISTORY_SEND), requesterName)
 end
 
 function Chat:BroadcastAllChannels()
@@ -1136,89 +910,6 @@ function Chat:SetCrossGuildSendTarget(clubId)
     end
 end
 
--- ── Community invite / join-request API ──────────────────────────────────
-
--- True if the current player is already subscribed to a community club.
-function Chat:IsSubscribedToCommunity(clubId)
-    local C_Club = rawget(_G, "C_Club")
-    if not (C_Club and C_Club.GetSubscribedClubs) then return false end
-    local clubs = SafeCall(C_Club.GetSubscribedClubs) or {}
-    local cid = tostring(clubId)
-    for _, club in ipairs(clubs) do
-        if tostring(club.clubId) == cid then return true end
-    end
-    return false
-end
-
--- Returns the pending invite table for a club if one exists, else nil.
-function Chat:GetPendingInviteForClub(clubId)
-    local C_Club = rawget(_G, "C_Club")
-    if not (C_Club and C_Club.GetInvitationsForSelf) then return nil end
-    local invites = SafeCall(C_Club.GetInvitationsForSelf) or {}
-    local cid = tostring(clubId)
-    for _, inv in ipairs(invites) do
-        if tostring(inv.clubId) == cid then return inv end
-    end
-    return nil
-end
-
--- Member: broadcast an access request to online officers.
-function Chat:RequestCommunityAccess(clubId, communityLabel)
-    local payload = table.concat(
-        { MSG_TYPE_JOIN_REQUEST, tostring(clubId), communityLabel, GH:GetPlayerName() },
-        SEPARATOR)
-    local C_ChatInfo = rawget(_G, "C_ChatInfo")
-    if C_ChatInfo and #payload <= 250 then
-        C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
-    end
-end
-
--- Officer: send a community invite (call from hardware-event OnClick context).
-function Chat:SendCommunityInvite(clubId, playerName)
-    local C_Club = rawget(_G, "C_Club")
-    if not (C_Club and C_Club.InviteMember) then return false end
-    local ok = pcall(C_Club.InviteMember, clubId, playerName)
-    if ok then
-        GH.DB:ClearJoinRequest(playerName)
-        local payload = table.concat({ MSG_TYPE_JOIN_REQ_CLEAR, playerName }, SEPARATOR)
-        local C_ChatInfo = rawget(_G, "C_ChatInfo")
-        if C_ChatInfo and #payload <= 250 then
-            C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
-        end
-        if GH.UI and GH.UI._RefreshCommunityLinksDialog then
-            GH.UI:_RefreshCommunityLinksDialog()
-        end
-    end
-    return ok
-end
-
--- Member: accept a pending community invite (call from hardware-event OnClick context).
-function Chat:AcceptCommunityInvite(clubId)
-    local inv = Chat:GetPendingInviteForClub(clubId)
-    if not inv then return false end
-    local C_Club = rawget(_G, "C_Club")
-    if not (C_Club and C_Club.AcceptInvitation) then return false end
-    local ok = pcall(C_Club.AcceptInvitation, inv.clubId, inv.invitationId)
-    if ok then
-        C_Timer.After(1, function() Chat:FindLinkedCommunities() end)
-        if GH.UI and GH.UI.UpdateXGuildNotice then GH.UI:UpdateXGuildNotice() end
-    end
-    return ok
-end
-
--- Member: decline a pending community invite (call from hardware-event OnClick context).
-function Chat:DeclineCommunityInvite(clubId)
-    local inv = Chat:GetPendingInviteForClub(clubId)
-    if not inv then return false end
-    local C_Club = rawget(_G, "C_Club")
-    if not (C_Club and C_Club.DeclineInvitation) then return false end
-    local ok = pcall(C_Club.DeclineInvitation, inv.clubId, inv.invitationId)
-    if ok and GH.UI and GH.UI.UpdateXGuildNotice then
-        GH.UI:UpdateXGuildNotice()
-    end
-    return ok
-end
-
 -- Returns subscribed non-guild clubs not already linked, for the picker UI.
 function Chat:GetAvailableCommunities()
     local C_Club = rawget(_G, "C_Club")
@@ -1231,16 +922,10 @@ function Chat:GetAvailableCommunities()
     for _, club in ipairs(clubs) do
         if club.clubType ~= CLUB_TYPE_GUILD and not linkedIds[tostring(club.clubId)] then
             local streams = SafeCall(C_Club.GetStreams, club.clubId) or {}
-            -- Prefer streamType 0 (General chat). Fall back to first available stream.
-            local streamId = nil
-            for _, s in ipairs(streams) do
-                if s.streamType == 0 then streamId = s.streamId; break end
-            end
-            if not streamId and streams[1] then streamId = streams[1].streamId end
-            if streamId then
+            if streams[1] then
                 result[#result + 1] = {
                     clubId   = club.clubId,
-                    streamId = streamId,
+                    streamId = streams[1].streamId,
                     name     = club.name or tostring(club.clubId),
                 }
             end

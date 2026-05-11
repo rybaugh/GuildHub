@@ -3,14 +3,13 @@
 -- GuildHubDB is declared as SavedVariables in the TOC; WoW populates it at login.
 --
 -- Isolation model:
---   GuildHubDB.guilds[guildName]                 — guild-wide data (events, guildMessages, …)
---   GuildHubDB.guilds[guildName].chars[charName] — per-character data (groups, chats)
---   GuildHubDB.settings                          — account-wide settings
---   GuildHubDB.sessionLog                        — account-wide debug log
+--   GuildHubDB.guilds[guildName]  — all guild-specific data (groups, chats, events, etc.)
+--   GuildHubDB.settings           — account-wide settings
+--   GuildHubDB.sessionLog         — account-wide debug log
 --
--- DB._activeGuild / DB._activeChar are set via DB:SetActiveGuild(name) during
--- PLAYER_LOGIN once GetGuildInfo("player") is reliable.  All CRUD methods return
--- empty / no-op until SetActiveGuild has been called.
+-- DB._activeGuild is set via DB:SetActiveGuild(name) during PLAYER_LOGIN, once
+-- GetGuildInfo("player") is reliable.  All guild-specific CRUD methods return
+-- empty/no-op until SetActiveGuild has been called.
 
 local GH = GuildHub
 local DB = GH.DB
@@ -32,27 +31,19 @@ local DEFAULTS = {
     sessionLog = {},
 }
 
--- Guild-wide: shared across all characters in the same guild.
 local GUILD_DEFAULTS = {
-    guildMessages        = {},
-    events               = {},
-    recruit              = {},
-    lfmPoints            = {},
-    memberNotes          = {},
-    memberScores         = {},
-    communityLinks       = {},   -- [id] = {clubId, streamId, label, enabled}
-    communityMessages    = {},   -- persisted cross-guild history (14-day / 2000-msg ring)
-    crossGuildLabel      = nil,  -- nil → "Cross Guild Chat"
-    crossGuildSendTarget = nil,  -- clubId string to send to, nil = guild chat
-    communityJoinRequests = {},  -- [playerName] = {clubId, communityLabel, ts}
-    chars                = {},   -- [charName] = CHAR_DEFAULTS
-}
-
--- Per-character: groups joined and custom chat channels are toon-specific so that
--- alts in the same guild don't inherit another character's team memberships or history.
-local CHAR_DEFAULTS = {
-    groups = {},
-    chats  = {},
+    groups              = {},
+    chats               = {},
+    guildMessages       = {},
+    events              = {},
+    recruit             = {},
+    lfmPoints           = {},
+    memberNotes         = {},
+    memberScores        = {},
+    communityLinks      = {},   -- [id] = {clubId, streamId, label, enabled}
+    communityMessages   = {},   -- persisted cross-guild history (14-day / 2000-msg ring)
+    crossGuildLabel     = nil,  -- nil → "Cross Guild Chat"
+    crossGuildSendTarget = nil, -- clubId string to send to, nil = guild chat
 }
 
 function DB:Initialize()
@@ -92,62 +83,22 @@ function DB:Initialize()
 end
 
 -- Called from PLAYER_LOGIN once GetGuildInfo("player") is reliable.
--- Creates/migrates the per-guild and per-character namespaces and marks both active.
+-- Creates the per-guild namespace if absent and sets it as active.
 function DB:SetActiveGuild(name)
     if not name or name == "" or name == "No Guild" then return end
     local db = sv()
     if not db then return end
-
-    -- Always establish the guild namespace first so guild-wide data (guildMessages,
-    -- events, …) is immediately accessible regardless of character-name availability.
     db.guilds = db.guilds or {}
     if not db.guilds[name] then
         db.guilds[name] = self:_DeepCopy(GUILD_DEFAULTS)
     else
-        -- Backfill any guild-level keys added in newer versions.
-        local gd = db.guilds[name]
         for k, v in pairs(GUILD_DEFAULTS) do
-            if gd[k] == nil then gd[k] = self:_DeepCopy(v) end
-        end
-    end
-
-    self._activeGuild = name   -- guild data accessible from this point on
-
-    -- Per-character namespace: requires a valid character name.
-    -- UnitName("player") can return nil briefly during PLAYER_LOGIN on some builds;
-    -- in that case guild data stays accessible while char data is deferred.
-    local charName = GH:GetPlayerName()
-    if not charName or charName == "" or charName == "Unknown" then return end
-
-    local gd = db.guilds[name]
-
-    -- Migrate: groups/chats used to live at the guild level (shared across all
-    -- characters).  Move them under the current toon; others start fresh.
-    if gd.groups ~= nil or gd.chats ~= nil then
-        gd.chars = gd.chars or {}
-        if not gd.chars[charName] then
-            gd.chars[charName] = {
-                groups = gd.groups or {},
-                chats  = gd.chats  or {},
-            }
-        end
-        gd.groups = nil
-        gd.chats  = nil
-    end
-
-    -- Set up (or backfill) the per-character record.
-    gd.chars = gd.chars or {}
-    if not gd.chars[charName] then
-        gd.chars[charName] = self:_DeepCopy(CHAR_DEFAULTS)
-    else
-        for k, v in pairs(CHAR_DEFAULTS) do
-            if gd.chars[charName][k] == nil then
-                gd.chars[charName][k] = self:_DeepCopy(v)
+            if db.guilds[name][k] == nil then
+                db.guilds[name][k] = self:_DeepCopy(v)
             end
         end
     end
-
-    self._activeChar = charName
+    self._activeGuild = name
 end
 
 -- Returns the active per-guild data table, or nil if no guild is active yet.
@@ -155,13 +106,6 @@ function DB:_GuildData()
     local db = sv()
     if not db or not self._activeGuild then return nil end
     return db.guilds and db.guilds[self._activeGuild]
-end
-
--- Returns the active per-character data table, or nil if not ready yet.
-function DB:_CharData()
-    local gd = self:_GuildData()
-    if not gd or not self._activeChar then return nil end
-    return gd.chars and gd.chars[self._activeChar]
 end
 
 -- Settings (account-wide) ---------------------------------------------------
@@ -176,49 +120,49 @@ function DB:SetSetting(key, value)
     if db then db.settings[key] = value end
 end
 
--- Groups — per-character ----------------------------------------------------
+-- Groups --------------------------------------------------------------------
 
 function DB:GetGroups()
-    local cd = self:_CharData()
-    return (cd and cd.groups) or {}
+    local gd = self:_GuildData()
+    return (gd and gd.groups) or {}
 end
 
 function DB:SaveGroup(id, data)
-    local cd = self:_CharData()
-    if cd then cd.groups[id] = data end
+    local gd = self:_GuildData()
+    if gd then gd.groups[id] = data end
 end
 
 function DB:DeleteGroup(id)
-    local cd = self:_CharData()
-    if cd then cd.groups[id] = nil end
+    local gd = self:_GuildData()
+    if gd then gd.groups[id] = nil end
 end
 
--- Chats — per-character -----------------------------------------------------
+-- Chats ---------------------------------------------------------------------
 
 function DB:GetChats()
-    local cd = self:_CharData()
-    return (cd and cd.chats) or {}
+    local gd = self:_GuildData()
+    return (gd and gd.chats) or {}
 end
 
 function DB:GetChat(id)
-    local cd = self:_CharData()
-    return cd and cd.chats[id]
+    local gd = self:_GuildData()
+    return gd and gd.chats[id]
 end
 
 function DB:SaveChat(id, data)
-    local cd = self:_CharData()
-    if cd then cd.chats[id] = data end
+    local gd = self:_GuildData()
+    if gd then gd.chats[id] = data end
 end
 
 function DB:DeleteChat(id)
-    local cd = self:_CharData()
-    if cd then cd.chats[id] = nil end
+    local gd = self:_GuildData()
+    if gd then gd.chats[id] = nil end
 end
 
 function DB:AddChatMessage(chatId, msg)
-    local cd = self:_CharData()
-    if not cd then return end
-    local chat = cd.chats[chatId]
+    local gd = self:_GuildData()
+    if not gd then return end
+    local chat = gd.chats[chatId]
     if not chat then return end
     chat.messages = chat.messages or {}
     table.insert(chat.messages, msg)
@@ -457,26 +401,4 @@ end
 function DB:SetCrossGuildSendTarget(clubId)
     local gd = self:_GuildData()
     if gd then gd.crossGuildSendTarget = clubId end
-end
-
--- Community Join Requests ---------------------------------------------------
-
-function DB:GetJoinRequests()
-    local gd = self:_GuildData()
-    return (gd and gd.communityJoinRequests) or {}
-end
-
-function DB:SaveJoinRequest(name, data)
-    local gd = self:_GuildData()
-    if gd then
-        gd.communityJoinRequests = gd.communityJoinRequests or {}
-        gd.communityJoinRequests[name] = data
-    end
-end
-
-function DB:ClearJoinRequest(name)
-    local gd = self:_GuildData()
-    if gd and gd.communityJoinRequests then
-        gd.communityJoinRequests[name] = nil
-    end
 end

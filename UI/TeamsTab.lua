@@ -21,14 +21,9 @@ local INP_H = 46
 local function EnsureTeamChannel(groupId)
     local g = GH.Groups:Get(groupId)
     if not g then return nil end
-    if g.channelId then
-        -- If the DB returned the group, _activeGuild is set and GetChat is authoritative.
-        -- If it returns nil here the record is genuinely missing, so fall through to create.
-        if GH.DB:GetChat(g.channelId) then return g.channelId end
+    if g.channelId and GH.DB:GetChat(g.channelId) then
+        return g.channelId
     end
-    -- Only create a new channel when the DB is confirmed active (Groups:Get succeeded,
-    -- so _GuildData is non-nil).  If channelId was already set but the chat record is
-    -- gone, we create a fresh one; otherwise this is the first-time setup path.
     local myName     = GH:GetPlayerName()
     local chanMembers = {}
     local hasMe      = false
@@ -485,27 +480,6 @@ function UI:RefreshMemberStrip(groupId)
     end
 end
 
--- Called by GroupManager when this player joins a team or an existing team's
--- roster changes. Refreshes the tab strip, and if this team is now selected
--- (or nothing was selected) also updates the member strip + chat area so the
--- player sees the new state without any manual tab-flipping.
-function UI:OnTeamMembershipChanged(groupId)
-    local frame = UI.TeamsTab
-    if not frame then return end
-
-    -- If the player had nothing selected, pre-select this team so that the
-    -- OnShow handler will display it automatically when they next open the tab.
-    if selected == nil then
-        selected = groupId
-    end
-
-    UI:RefreshTeamsGroupList()
-
-    if selected == groupId and frame:IsShown() then
-        UI:ShowTeamView(groupId)
-    end
-end
-
 -- ── Team view ─────────────────────────────────────────────────────────────
 
 function UI:ShowTeamView(groupId)
@@ -555,8 +529,8 @@ function UI:RefreshTeamChatMessages(groupId)
 end
 
 -- ── ChatManager callbacks ─────────────────────────────────────────────────
--- ChatTab.lua is loaded before TeamsTab.lua (per .toc), so this definition
--- is final. Both tabs' real-time update needs are handled here.
+-- TeamsTab.lua is loaded after ChatTab.lua, so this definition is final.
+-- Both tabs' needs are handled here.
 
 function UI:OnChatMessage(channelId)
     UI:UpdateChatBadge()

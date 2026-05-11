@@ -15,9 +15,9 @@ EventManager.lua
 RecruitManager.lua
 UI/Styles.lua
 UI/MainWindow.lua
-UI/ChatTab.lua
+UI/TeamsTab.lua
 UI/MembersTab.lua
 UI/EventsTab.lua
 UI/RecruitTab.lua
-UI/TeamsTab.lua
+UI/ChatTab.lua
 Main.lua

@@ -334,7 +334,7 @@ function Groups:OnAddonMessage(payload, _)
                         GH.Chat:AddMember(g.channelId, accepter)
                     end
                     Groups:_SyncToMember(groupId, g, accepter)
-                    if GH.UI then GH.UI:OnTeamMembershipChanged(groupId) end
+                    if GH.UI then GH.UI:RefreshTeamsGroupList() end
                     print("|cff7289daGuildHub:|r |cffffd700" .. accepter
                           .. "|r joined " .. g.name .. ".")
                 end
@@ -497,7 +497,7 @@ function Groups:OnAddonMessage(payload, _)
                 })
             end
 
-            if GH.UI then GH.UI:OnTeamMembershipChanged(groupId) end
+            if GH.UI then GH.UI:RefreshTeamsGroupList() end
         end
     end
 end
