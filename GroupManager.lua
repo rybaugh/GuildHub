@@ -1,0 +1,503 @@
+-- GuildHub - GroupManager
+-- Officer-defined raid/social group presets with invite system.
+--
+-- Addon message protocol (all prefixed with GH.ADDON_PREFIX):
+--   TMINV \30 groupId \30 teamName \30 inviterName \30 targetName
+--   TMACC \30 groupId \30 accepterName
+--   TMDEC \30 groupId \30 declinerName
+--   TMREM \30 groupId \30 removedName
+--   TMCHK \30 requesterName              (login sync request)
+--   TMSYN \30 groupId \30 teamName \30 membersCSV \30 channelId \30 targetName
+
+local GH     = GuildHub
+local Groups = GH.Groups
+
+local InviteUnit = rawget(_G, "InviteUnit")
+local SEP        = "\30"
+
+local TM_INV = "TMINV"
+local TM_ACC = "TMACC"
+local TM_DEC = "TMDEC"
+local TM_REM = "TMREM"
+local TM_CHK = "TMCHK"
+local TM_SYN = "TMSYN"
+local TM_OFC = "TMOFC"   -- officer visibility sync (no membership implied)
+local TM_DLT = "TMDLT"  -- broadcast team deletion to all officers
+
+Groups.pendingInvites = {}   -- [groupId] = { teamName, inviter }
+
+-- ── Initialisation ────────────────────────────────────────────────────────
+
+function Groups:Initialize()
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("CHAT_MSG_ADDON")
+    frame:SetScript("OnEvent", function(_, _, prefix, payload, _, sender)
+        if prefix == GH.ADDON_PREFIX then
+            Groups:OnAddonMessage(payload, sender)
+        end
+    end)
+
+    -- After login, ask online officers to verify team membership
+    C_Timer.After(12, function() Groups:RequestTeamSync() end)
+end
+
+-- ── Basic group CRUD ──────────────────────────────────────────────────────
+
+function Groups:GetAll()
+    local myName   = GH:GetPlayerName()
+    local isOfficer = GH:IsOfficer()
+    local out = {}
+    for id, g in pairs(GH.DB:GetGroups()) do
+        local members = g.members or {}
+        local isMember = false
+        for _, n in ipairs(members) do
+            if n == myName then isMember = true; break end
+        end
+        -- Officers see all teams; empty legacy teams also visible to managers for cleanup.
+        local isEmpty = (#members == 0)
+        if isMember or isOfficer or (isEmpty and GH:CanManageTeams()) then
+            out[#out + 1] = {
+                id        = id,
+                name      = g.name,
+                members   = members,
+                color     = g.color,
+                channelId = g.channelId,
+            }
+        end
+    end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    return out
+end
+
+function Groups:Get(id)
+    return GH.DB:GetGroups()[id]
+end
+
+function Groups:Create(name)
+    local id = GH.DB:NewId()
+    local _, _, rankIndex = GetGuildInfo("player")
+    GH.DB:SaveGroup(id, {
+        name        = name,
+        members     = { GH:GetPlayerName() },
+        color       = "7289DA",
+        creator     = GH:GetPlayerName(),
+        creatorRank = rankIndex or 1,
+    })
+    -- Notify all online officers so they see the new team immediately.
+    C_Timer.After(0.5, function()
+        local g = GH.DB:GetGroups()[id]
+        if g then Groups:_OfficerSync(id, g) end
+    end)
+    return id
+end
+
+function Groups:Rename(id, name)
+    local g = GH.DB:GetGroups()[id]
+    if g then
+        g.name = name
+        GH.DB:SaveGroup(id, g)
+    end
+end
+
+-- Delete team and notify all members they have been removed.
+-- Caller must have already checked CanManageTeam(id).
+function Groups:Delete(id)
+    local g = GH.DB:GetGroups()[id]
+    if g then
+        local myName = GH:GetPlayerName()
+        for _, memberName in ipairs(g.members or {}) do
+            if memberName ~= myName then
+                Groups:_SendRemoved(id, memberName)
+            end
+        end
+    end
+    GH.DB:DeleteGroup(id)
+    -- Broadcast deletion so officers remove the team from their local DB.
+    local payload = table.concat({ TM_DLT, id }, SEP)
+    Groups:_Send(payload)
+end
+
+-- Add a member without an invite (used internally after acceptance).
+function Groups:AddMember(id, memberName)
+    local g = GH.DB:GetGroups()[id]
+    if not g then return end
+    for _, n in ipairs(g.members) do
+        if n == memberName then return end
+    end
+    g.members[#g.members + 1] = memberName
+    GH.DB:SaveGroup(id, g)
+    -- Sync full team data to the new member and update watching officers.
+    Groups:_SyncToMember(id, g, memberName)
+    Groups:_OfficerSync(id, g)
+end
+
+-- Remove a member and notify their client.
+function Groups:RemoveMember(id, memberName)
+    local g = GH.DB:GetGroups()[id]
+    if not g then return end
+    for i, n in ipairs(g.members) do
+        if n == memberName then
+            table.remove(g.members, i)
+            break
+        end
+    end
+    GH.DB:SaveGroup(id, g)
+    Groups:_SendRemoved(id, memberName)
+    -- Update watching officers with the new member list.
+    Groups:_OfficerSync(id, g)
+end
+
+function Groups:InviteAll(id)
+    local g = GH.DB:GetGroups()[id]
+    if not g then return end
+    local myName = GH:GetPlayerName()
+    for _, memberName in ipairs(g.members) do
+        if memberName ~= myName then
+            local info = GH.GuildData.byName[memberName]
+            if info and info.online then
+                InviteUnit(info.fullName)
+            end
+        end
+    end
+end
+
+function Groups:SetColor(id, hex)
+    local g = GH.DB:GetGroups()[id]
+    if g then
+        g.color = hex
+        GH.DB:SaveGroup(id, g)
+    end
+end
+
+function Groups:SetChannel(id, channelId)
+    local g = GH.DB:GetGroups()[id]
+    if g then
+        g.channelId = channelId
+        GH.DB:SaveGroup(id, g)
+    end
+end
+
+-- ── Invite API (called from UI) ───────────────────────────────────────────
+
+-- Officer sends a team invite to an online guild member.
+-- Returns true if sent successfully, false otherwise (prints reason).
+function Groups:SendInvite(groupId, targetName)
+    if not GH:CanManageTeam(groupId) then
+        print("|cff7289daGuildHub:|r You do not have permission to invite members to this team.")
+        return false
+    end
+    -- Case-insensitive lookup so "stormart" finds "Stormart"
+    local memberInfo = GH.GuildData:FindMember(targetName)
+    if not memberInfo then
+        print("|cff7289daGuildHub:|r |cffffd700" .. targetName
+              .. "|r was not found in the guild roster.")
+        return false
+    end
+    if not memberInfo.online then
+        local display = memberInfo.fullName ~= memberInfo.name
+                        and memberInfo.fullName or memberInfo.name
+        print("|cff7289daGuildHub:|r |cffffd700" .. display
+              .. "|r must be online to receive a team invite.")
+        return false
+    end
+    local g = Groups:Get(groupId)
+    if not g then return false end
+    -- Use canonical short name for the roster entry
+    local canonical = memberInfo.name
+    for _, n in ipairs(g.members or {}) do
+        if n == canonical then
+            print("|cff7289daGuildHub:|r " .. canonical .. " is already on this team.")
+            return false
+        end
+    end
+    -- Payload target field uses short name; receiver compares against UnitName("player")
+    local payload = table.concat(
+        { TM_INV, groupId, g.name, GH:GetPlayerName(), canonical }, SEP)
+    Groups:_Send(payload)
+    local display = memberInfo.fullName ~= memberInfo.name
+                    and memberInfo.fullName or memberInfo.name
+    print("|cff7289daGuildHub:|r Team invite sent to |cffffd700" .. display .. "|r.")
+    return true
+end
+
+-- Invitee accepts a pending team invite.
+function Groups:AcceptInvite(groupId)
+    local invite = Groups.pendingInvites[groupId]
+    if not invite then return end
+    Groups.pendingInvites[groupId] = nil
+    local payload = table.concat({ TM_ACC, groupId, GH:GetPlayerName() }, SEP)
+    Groups:_Send(payload)
+    print("|cff7289daGuildHub:|r You joined team |cffffd700" .. invite.teamName .. "|r!")
+end
+
+-- Invitee declines a pending team invite.
+function Groups:DeclineInvite(groupId)
+    local invite = Groups.pendingInvites[groupId]
+    if not invite then return end
+    Groups.pendingInvites[groupId] = nil
+    local payload = table.concat({ TM_DEC, groupId, GH:GetPlayerName() }, SEP)
+    Groups:_Send(payload)
+end
+
+-- Broadcast a check request; online officers respond with each team this player is on.
+function Groups:RequestTeamSync()
+    if not GH:IsInGuild() then return end
+    local payload = table.concat({ TM_CHK, GH:GetPlayerName() }, SEP)
+    Groups:_Send(payload)
+end
+
+-- ── Internal helpers ──────────────────────────────────────────────────────
+
+function Groups:_Send(payload)
+    if #payload > 250 then return end
+    local C_ChatInfo = rawget(_G, "C_ChatInfo")
+    if C_ChatInfo then
+        C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
+    end
+end
+
+function Groups:_SyncToMember(groupId, g, targetName)
+    local membersStr = table.concat(g.members or {}, ",")
+    local payload = table.concat(
+        { TM_SYN, groupId, g.name, membersStr, g.channelId or "", targetName }, SEP)
+    -- If member list makes it too long, omit it (member can still chat)
+    if #payload > 250 then
+        payload = table.concat(
+            { TM_SYN, groupId, g.name, "", g.channelId or "", targetName }, SEP)
+    end
+    Groups:_Send(payload)
+end
+
+function Groups:_SendRemoved(groupId, memberName)
+    local payload = table.concat({ TM_REM, groupId, memberName }, SEP)
+    Groups:_Send(payload)
+end
+
+-- Broadcast team data to all officers without implying membership.
+-- Sent on team creation, member changes, and login sync for officer requesters.
+function Groups:_OfficerSync(groupId, g)
+    local membersStr = table.concat(g.members or {}, ",")
+    local payload = table.concat(
+        { TM_OFC, groupId, g.name, membersStr, g.channelId or "",
+          tostring(g.creatorRank or ""), g.creator or "" }, SEP)
+    if #payload > 250 then
+        payload = table.concat(
+            { TM_OFC, groupId, g.name, "", g.channelId or "",
+              tostring(g.creatorRank or ""), g.creator or "" }, SEP)
+    end
+    Groups:_Send(payload)
+end
+
+-- ── Addon message routing ─────────────────────────────────────────────────
+
+function Groups:OnAddonMessage(payload, _)
+    -- Quick pre-filter: ignore messages that don't start with "TM"
+    if payload:sub(1, 2) ~= "TM" then return end
+
+    local parts = {}
+    for p in (payload .. SEP):gmatch("([^" .. SEP .. "]*)" .. SEP) do
+        parts[#parts + 1] = p
+    end
+    if #parts < 1 then return end
+
+    local msgType = parts[1]
+    local myName  = GH:GetPlayerName()
+
+    -- ── TMINV: team invite addressed to us ───────────────────────────────
+    if msgType == TM_INV then
+        if #parts >= 5 and parts[5] == myName then
+            local groupId  = parts[2]
+            local teamName = parts[3]
+            local inviter  = parts[4]
+            Groups.pendingInvites[groupId] = { teamName = teamName, inviter = inviter }
+            if GH.UI and GH.UI.ShowTeamInvitePopup then
+                GH.UI:ShowTeamInvitePopup(groupId, teamName, inviter)
+            end
+        end
+
+    -- ── TMACC: someone accepted our invite ───────────────────────────────
+    elseif msgType == TM_ACC then
+        if #parts >= 3 and GH:CanManageTeams() then
+            local groupId  = parts[2]
+            local accepter = parts[3]
+            if accepter == myName then return end   -- our own echo
+            local g = Groups:Get(groupId)
+            if g then
+                local alreadyIn = false
+                for _, n in ipairs(g.members or {}) do
+                    if n == accepter then alreadyIn = true; break end
+                end
+                if not alreadyIn then
+                    g.members[#g.members + 1] = accepter
+                    GH.DB:SaveGroup(groupId, g)
+                    if g.channelId then
+                        GH.Chat:AddMember(g.channelId, accepter)
+                    end
+                    Groups:_SyncToMember(groupId, g, accepter)
+                    if GH.UI then GH.UI:OnTeamMembershipChanged(groupId) end
+                    print("|cff7289daGuildHub:|r |cffffd700" .. accepter
+                          .. "|r joined " .. g.name .. ".")
+                end
+            end
+        end
+
+    -- ── TMDEC: someone declined our invite ───────────────────────────────
+    elseif msgType == TM_DEC then
+        if #parts >= 3 and GH:CanManageTeams() then
+            local groupId  = parts[2]
+            local decliner = parts[3]
+            if decliner == myName then return end
+            local g = Groups:Get(groupId)
+            print("|cff7289daGuildHub:|r |cffffd700" .. decliner
+                  .. "|r declined the invite to " .. (g and g.name or "your team") .. ".")
+        end
+
+    -- ── TMREM: we were removed from a team ───────────────────────────────
+    elseif msgType == TM_REM then
+        if #parts >= 3 and parts[3] == myName then
+            local groupId = parts[2]
+            local g       = GH.DB:GetGroups()[groupId]
+            local chanId  = g and g.channelId
+            GH.DB:DeleteGroup(groupId)
+            -- Remove ourselves from the channel member list locally
+            if chanId then
+                local ch = GH.DB:GetChat(chanId)
+                if ch then
+                    for i, n in ipairs(ch.members or {}) do
+                        if n == myName then
+                            table.remove(ch.members, i)
+                            break
+                        end
+                    end
+                    GH.DB:SaveChat(chanId, ch)
+                end
+            end
+            if GH.UI then GH.UI:RefreshTeamsGroupList() end
+            print("|cff7289daGuildHub:|r You have been removed from a team.")
+        end
+
+    -- ── TMCHK: login sync request — team managers respond ────────────────
+    elseif msgType == TM_CHK then
+        if #parts >= 2 and GH:CanManageTeams() then
+            local requester = parts[2]
+            if requester ~= myName then
+                -- Stagger replies to avoid everyone flooding at once
+                C_Timer.After(math.random(1, 5), function()
+                    local requesterInfo    = GH.GuildData:FindMember(requester)
+                    local requesterRank    = requesterInfo and requesterInfo.rankIndex
+                    local officerThreshold = GH.DB:GetSetting("officerRankThreshold") or 4
+                    local requesterIsOfficer = requesterRank and requesterRank <= officerThreshold
+
+                    for groupId, g in pairs(GH.DB:GetGroups()) do
+                        local isOnTeam = false
+                        for _, n in ipairs(g.members or {}) do
+                            if n == requester then isOnTeam = true; break end
+                        end
+
+                        if isOnTeam then
+                            Groups:_SyncToMember(groupId, g, requester)
+                        elseif requesterIsOfficer then
+                            -- Officer who isn't on this team still gets visibility.
+                            Groups:_OfficerSync(groupId, g)
+                        end
+                    end
+                end)
+            end
+        end
+
+    -- ── TMOFC: officer visibility sync (no membership) ───────────────────
+    elseif msgType == TM_OFC then
+        if GH:IsOfficer() then
+            if #parts >= 5 then
+                local groupId    = parts[2]
+                local teamName   = parts[3]
+                local membersStr = parts[4]
+                local channelId  = parts[5] ~= "" and parts[5] or nil
+                local creatorRank = tonumber(parts[6])
+                local creator    = (parts[7] and parts[7] ~= "") and parts[7] or nil
+
+                local members = {}
+                if membersStr ~= "" then
+                    for n in (membersStr .. ","):gmatch("([^,]*),") do
+                        if n ~= "" then members[#members + 1] = n end
+                    end
+                end
+
+                local existing = GH.DB:GetGroups()[groupId]
+                GH.DB:SaveGroup(groupId, {
+                    name        = teamName,
+                    members     = #members > 0 and members or (existing and existing.members or {}),
+                    channelId   = channelId or (existing and existing.channelId),
+                    color       = existing and existing.color or "7289DA",
+                    creator     = creator or (existing and existing.creator),
+                    creatorRank = creatorRank or (existing and existing.creatorRank),
+                })
+
+                -- Ensure a local chat record exists so the officer can view messages.
+                if channelId and not GH.DB:GetChat(channelId) then
+                    GH.DB:SaveChat(channelId, {
+                        name     = teamName,
+                        members  = members,
+                        messages = {},
+                    })
+                end
+
+                if GH.UI then GH.UI:RefreshTeamsGroupList() end
+            end
+        end
+
+    -- ── TMDLT: broadcast team deletion ───────────────────────────────────
+    elseif msgType == TM_DLT then
+        if #parts >= 2 then
+            local groupId = parts[2]
+            -- Remove from local DB if present (applies to watching officers and members).
+            if GH.DB:GetGroups()[groupId] then
+                GH.DB:DeleteGroup(groupId)
+                if GH.UI then GH.UI:RefreshTeamsGroupList() end
+            end
+        end
+
+    -- ── TMSYN: team data synced to us ────────────────────────────────────
+    elseif msgType == TM_SYN then
+        if #parts >= 6 and parts[6] == myName then
+            local groupId    = parts[2]
+            local teamName   = parts[3]
+            local membersStr = parts[4]
+            local channelId  = parts[5] ~= "" and parts[5] or nil
+
+            -- Parse member list (may be empty if truncated)
+            local members = {}
+            if membersStr ~= "" then
+                for n in (membersStr .. ","):gmatch("([^,]*),") do
+                    if n ~= "" then members[#members + 1] = n end
+                end
+            end
+            -- Ensure we're listed (in case list was truncated)
+            local hasMe = false
+            for _, n in ipairs(members) do
+                if n == myName then hasMe = true; break end
+            end
+            if not hasMe then members[#members + 1] = myName end
+
+            -- Save / update local team record
+            local existing = GH.DB:GetGroups()[groupId]
+            GH.DB:SaveGroup(groupId, {
+                name      = teamName,
+                members   = #members > 0 and members or (existing and existing.members or {}),
+                channelId = channelId or (existing and existing.channelId),
+                color     = existing and existing.color or "7289DA",
+            })
+
+            -- Bootstrap channel record if we don't have it yet
+            if channelId and not GH.DB:GetChat(channelId) then
+                GH.DB:SaveChat(channelId, {
+                    name     = teamName,
+                    members  = members,
+                    messages = {},
+                })
+            end
+
+            if GH.UI then GH.UI:OnTeamMembershipChanged(groupId) end
+        end
+    end
+end

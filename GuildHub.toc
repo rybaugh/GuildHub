@@ -1,0 +1,23 @@
+## Interface: 120005
+## Title: GuildHub
+## Notes: Modern guild social window — members, group presets, persistent chats, events, and recruitment
+## Author: Storm
+## Version: 1.0
+## SavedVariables: GuildHubDB
+
+Core.lua
+Debug.lua
+Database.lua
+GuildData.lua
+GroupManager.lua
+ChatManager.lua
+EventManager.lua
+RecruitManager.lua
+UI/Styles.lua
+UI/MainWindow.lua
+UI/ChatTab.lua
+UI/MembersTab.lua
+UI/EventsTab.lua
+UI/RecruitTab.lua
+UI/TeamsTab.lua
+Main.lua
