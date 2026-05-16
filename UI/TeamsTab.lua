@@ -12,9 +12,9 @@ local selected  = nil
 local lastMsgTs = 0
 local lastMsgId = nil
 
-local TAB_H = 38
-local MBR_H = 42
-local INP_H = 46
+local TAB_H    = 38
+local INP_H    = 46
+local ROSTER_W = 190
 
 -- ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ end
 
 -- ── Construction ──────────────────────────────────────────────────────────
 
-function UI:CreateTeamsTab(parent, w, _)
+function UI:CreateTeamsTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints(parent)
     frame:Hide()
@@ -58,14 +58,16 @@ function UI:CreateTeamsTab(parent, w, _)
     tabStrip:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
     tabStrip:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     tabStrip:SetHeight(TAB_H)
-    S:Bg(tabStrip, S.COLOR.SIDEBAR[1], S.COLOR.SIDEBAR[2], S.COLOR.SIDEBAR[3], 1)
+    S:GradientBg(tabStrip, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
     frame.tabStrip = tabStrip
 
     local stripDiv = tabStrip:CreateTexture(nil, "ARTWORK")
     stripDiv:SetPoint("BOTTOMLEFT",  tabStrip)
     stripDiv:SetPoint("BOTTOMRIGHT", tabStrip)
     stripDiv:SetHeight(1)
-    stripDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.7)
+    stripDiv:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.15)
 
     -- Right-pinned action buttons (always visible, guards handle nothing-selected)
     local newTeamBtn = S:Button(tabStrip, "+ New Team", 96, 26)
@@ -86,8 +88,8 @@ function UI:CreateTeamsTab(parent, w, _)
         GH.Groups:Delete(selected)
         selected = nil
         UI:RefreshTeamsGroupList()
-        frame.memberStrip:Hide()
         frame.placeholder:Show()
+        frame.rosterPanel:Hide()
         frame:UpdateLayout(false)
         frame.deleteBtn:SetAlpha(0.35)
         frame.membersBtn:SetAlpha(0.35)
@@ -124,53 +126,131 @@ function UI:CreateTeamsTab(parent, w, _)
     tabArea:SetClipsChildren(true)
     frame.tabArea = tabArea
 
-    -- ── Member presence strip ──────────────────────────────────────────────
-    local memberStrip = CreateFrame("Frame", nil, frame)
-    memberStrip:SetPoint("TOPLEFT",  tabStrip, "BOTTOMLEFT",  0, -1)
-    memberStrip:SetPoint("TOPRIGHT", tabStrip, "BOTTOMRIGHT", 0, -1)
-    memberStrip:SetHeight(MBR_H)
-    S:Bg(memberStrip,
-        S.COLOR.PANEL[1] * 0.85, S.COLOR.PANEL[2] * 0.85, S.COLOR.PANEL[3] * 0.85, 1)
-    memberStrip:Hide()
-    frame.memberStrip = memberStrip
+    -- ── Team roster sidebar ───────────────────────────────────────────────────
+    local rosterPanel = CreateFrame("Frame", nil, frame)
+    rosterPanel:SetWidth(ROSTER_W)
+    rosterPanel:SetPoint("TOPRIGHT",    tabStrip, "BOTTOMRIGHT", 0, -1)
+    rosterPanel:SetPoint("BOTTOMRIGHT", frame,    "BOTTOMRIGHT", 0, INP_H)
+    rosterPanel:Hide()
+    frame.rosterPanel = rosterPanel
+    S:GradientBg(rosterPanel, "VERTICAL",
+        S.COLOR.SIDEBAR[1] + 0.005, S.COLOR.SIDEBAR[2] + 0.004, S.COLOR.SIDEBAR[3] + 0.010, 1,
+        S.COLOR.SIDEBAR[1],         S.COLOR.SIDEBAR[2],         S.COLOR.SIDEBAR[3],          1)
 
-    local mbrDiv = memberStrip:CreateTexture(nil, "ARTWORK")
-    mbrDiv:SetPoint("BOTTOMLEFT",  memberStrip)
-    mbrDiv:SetPoint("BOTTOMRIGHT", memberStrip)
-    mbrDiv:SetHeight(1)
-    mbrDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.5)
+    local rosterDiv = rosterPanel:CreateTexture(nil, "BORDER")
+    rosterDiv:SetWidth(1)
+    rosterDiv:SetPoint("TOPLEFT",    rosterPanel, "TOPLEFT",    0, 0)
+    rosterDiv:SetPoint("BOTTOMLEFT", rosterPanel, "BOTTOMLEFT", 0, 0)
+    rosterDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.6)
+
+    local rosterHdr = CreateFrame("Frame", nil, rosterPanel)
+    rosterHdr:SetPoint("TOPLEFT",  rosterPanel, "TOPLEFT",  0, 0)
+    rosterHdr:SetPoint("TOPRIGHT", rosterPanel, "TOPRIGHT", 0, 0)
+    rosterHdr:SetHeight(34)
+    S:GradientBg(rosterHdr, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
+    local rosterHdrSep = rosterHdr:CreateTexture(nil, "ARTWORK")
+    rosterHdrSep:SetPoint("BOTTOMLEFT",  rosterHdr, "BOTTOMLEFT")
+    rosterHdrSep:SetPoint("BOTTOMRIGHT", rosterHdr, "BOTTOMRIGHT")
+    rosterHdrSep:SetHeight(1)
+    rosterHdrSep:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.5)
+
+    local rosterCountFS = S:FS(rosterHdr, "OVERLAY")
+    rosterCountFS:SetPoint("LEFT",  rosterHdr, "LEFT",  10, 0)
+    rosterCountFS:SetPoint("RIGHT", rosterHdr, "RIGHT", -6, 0)
+    rosterCountFS:SetJustifyH("LEFT")
+    rosterCountFS:SetText("Members")
+    rosterCountFS:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+    frame.rosterCountFS = rosterCountFS
+
+    local rosterSf = CreateFrame("ScrollFrame", nil, rosterPanel)
+    rosterSf:SetPoint("TOPLEFT",     rosterPanel, "TOPLEFT",     1, -36)
+    rosterSf:SetPoint("BOTTOMRIGHT", rosterPanel, "BOTTOMRIGHT", -4, 4)
+    rosterSf:EnableMouseWheel(true)
+    rosterSf:SetScript("OnMouseWheel", function(sf, delta)
+        local max = sf:GetVerticalScrollRange()
+        sf:SetVerticalScroll(math.max(0, math.min(max, sf:GetVerticalScroll() - delta * 30)))
+    end)
+    local rosterContent = CreateFrame("Frame", nil, rosterSf)
+    rosterSf:SetScrollChild(rosterContent)
+    local function SyncRosterWidth()
+        local w = rosterSf:GetWidth()
+        if w > 0 then rosterContent:SetWidth(w) end
+    end
+    rosterSf:SetScript("OnSizeChanged", SyncRosterWidth)
+    C_Timer.After(0, SyncRosterWidth)
+    frame.rosterContent = rosterContent
+    frame.rosterRows    = {}
 
     -- ── Message area ──────────────────────────────────────────────────────
     local msgPanel = CreateFrame("Frame", nil, frame)
     msgPanel:SetPoint("TOPLEFT",     tabStrip, "BOTTOMLEFT",  0, -1)
-    msgPanel:SetPoint("BOTTOMRIGHT", frame,    "BOTTOMRIGHT", 0, INP_H)
+    msgPanel:SetPoint("BOTTOMRIGHT", frame,    "BOTTOMRIGHT", -ROSTER_W, INP_H)
     S:Bg(msgPanel, 0, 0, 0, 0.08)
     frame.msgPanel = msgPanel
 
-    -- Re-anchor msgPanel whenever member strip is toggled
-    function frame:UpdateLayout(memberStripShown)
+    function frame:UpdateLayout(rosterShown)
         msgPanel:ClearAllPoints()
-        if memberStripShown then
-            msgPanel:SetPoint("TOPLEFT",     memberStrip, "BOTTOMLEFT",  0, -1)
-            msgPanel:SetPoint("BOTTOMRIGHT", frame,       "BOTTOMRIGHT", 0, INP_H)
-        else
-            msgPanel:SetPoint("TOPLEFT",     tabStrip, "BOTTOMLEFT",  0, -1)
-            msgPanel:SetPoint("BOTTOMRIGHT", frame,    "BOTTOMRIGHT", 0, INP_H)
-        end
+        msgPanel:SetPoint("TOPLEFT",     tabStrip, "BOTTOMLEFT",  0, -1)
+        msgPanel:SetPoint("BOTTOMRIGHT", frame,    "BOTTOMRIGHT", rosterShown and -ROSTER_W or 0, INP_H)
     end
 
-    local msgSf = CreateFrame("ScrollFrame", nil, msgPanel, "UIPanelScrollFrameTemplate")
+    -- Plain scroll frame (no template) so no scrollbar widget can escape the
+    -- window edge at any width.  Mouse wheel scrolls history; new messages
+    -- auto-scroll to the bottom via SetVerticalScroll.
+    local msgSf = CreateFrame("ScrollFrame", nil, msgPanel)
     msgSf:SetPoint("TOPLEFT",     msgPanel, "TOPLEFT",     4, -4)
-    msgSf:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -20, 4)
+    msgSf:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -4, 4)
+    msgSf:EnableMouseWheel(true)
+    msgSf:SetScript("OnMouseWheel", function(self, delta)
+        local max = self:GetVerticalScrollRange()
+        local new = math.max(0, math.min(max, self:GetVerticalScroll() - delta * 40))
+        self:SetVerticalScroll(new)
+        local atBottom = max <= 0 or new >= max - 1
+        frame._scrolledUp = not atBottom
+        if frame.scrollToBottomBtn then frame.scrollToBottomBtn:SetShown(not atBottom) end
+    end)
+
+    local scrollToBottomBtn = CreateFrame("Button", nil, msgPanel)
+    scrollToBottomBtn:SetSize(34, 34)
+    scrollToBottomBtn:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -10, 10)
+    scrollToBottomBtn:SetFrameLevel(msgPanel:GetFrameLevel() + 20)
+    scrollToBottomBtn:Hide()
+    local _stbArrow = scrollToBottomBtn:CreateTexture(nil, "ARTWORK")
+    _stbArrow:SetAllPoints()
+    _stbArrow:SetTexture("Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up")
+    scrollToBottomBtn:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(scrollToBottomBtn, "ANCHOR_TOP")
+        GameTooltip:SetText("Jump to latest", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    scrollToBottomBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    scrollToBottomBtn:SetScript("OnClick", function()
+        msgSf:SetVerticalScroll(msgSf:GetVerticalScrollRange())
+        frame._scrolledUp = false
+        scrollToBottomBtn:Hide()
+    end)
+    frame.scrollToBottomBtn = scrollToBottomBtn
 
     local msgContent = CreateFrame("Frame", nil, msgSf)
-    msgContent:SetSize(w - 26, 10)
+    msgContent:SetHeight(10)
     msgSf:SetScrollChild(msgContent)
+
+    -- Keep content width matched to the scroll frame at all times.
+    local function SyncTeamMsgWidth()
+        local sfW = msgSf:GetWidth()
+        if sfW > 0 then msgContent:SetWidth(sfW) end
+    end
+    msgSf:SetScript("OnSizeChanged", SyncTeamMsgWidth)
+    C_Timer.After(0, SyncTeamMsgWidth)
 
     frame.msgScrollFrame   = msgSf
     frame.msgScrollContent = msgContent
 
-    local ph = msgPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local ph = S:FS(msgPanel, "OVERLAY", "normal")
     ph:SetPoint("CENTER", msgPanel, "CENTER")
     ph:SetText("Select a team or create a new one")
     ph:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -208,6 +288,8 @@ function UI:CreateTeamsTab(parent, w, _)
         tvInput:SetText("")
         tvInput:ClearFocus()
         lastMsgTs = 0
+        frame._scrolledUp = false
+        if frame.scrollToBottomBtn then frame.scrollToBottomBtn:Hide() end
         UI:RefreshTeamChatMessages(selected)
         C_Timer.After(0.05, function()
             if frame.msgScrollFrame then
@@ -225,6 +307,21 @@ function UI:CreateTeamsTab(parent, w, _)
         frame.deleteBtn:SetShown(isOfficer)
         UI:RefreshTeamsGroupList()
         if selected then UI:ShowTeamView(selected) end
+
+        -- GM: find any teams still marked pending and queue conflict dialogs
+        if GH:IsGuildMaster() then
+            for pendingId, pg in pairs(GH.DB:GetGroups()) do
+                if pg.pending then
+                    for canonicalId, cg in pairs(GH.DB:GetGroups()) do
+                        if canonicalId ~= pendingId
+                           and cg.name:lower() == pg.name:lower()
+                           and not cg.pending then
+                            UI:EnqueueConflict(pendingId, canonicalId)
+                        end
+                    end
+                end
+            end
+        end
     end)
 
     UI:RefreshTeamsGroupList()
@@ -244,8 +341,8 @@ function UI:RefreshTeamsGroupList()
     -- Reset selection if the team was deleted
     if selected and not GH.Groups:Get(selected) then
         selected = nil
-        frame.memberStrip:Hide()
         frame.placeholder:Show()
+        frame.rosterPanel:Hide()
         frame:UpdateLayout(false)
         frame.deleteBtn:SetAlpha(0.35)
         frame.membersBtn:SetAlpha(0.35)
@@ -259,14 +356,7 @@ function UI:RefreshTeamsGroupList()
         local isActive = (selected == g.id)
         local tr, tg, tb = HexToRGB(g.color)
 
-        -- Count online members
-        local total, online = #(g.members or {}), 0
-        for _, name in ipairs(g.members or {}) do
-            local info = GH.GuildData.byName[name]
-            if info and info.online then online = online + 1 end
-        end
-
-        local tabW = math.max(100, math.min(200, #g.name * 7 + 70))
+        local tabW = math.max(100, math.min(200, #g.name * 7 + 70 + (g.pending and 60 or 0)))
 
         local tab = CreateFrame("Button", nil, tabArea)
         tab:SetPoint("TOPLEFT",    tabArea, "TOPLEFT",    xOff, 0)
@@ -312,33 +402,20 @@ function UI:RefreshTeamsGroupList()
         swatchT:SetColorTexture(tr, tg, tb, isActive and 0.9 or 0.5)
 
         -- Team name
-        local nameFs = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local nameFs = S:FS(tab, "OVERLAY")
         nameFs:SetPoint("LEFT",  tab, "LEFT",  22, 0)
-        nameFs:SetPoint("RIGHT", tab, "RIGHT", -36, 0)
+        nameFs:SetPoint("RIGHT", tab, "RIGHT", -8, 0)
         nameFs:SetJustifyH("LEFT")
         nameFs:SetWordWrap(false)
-        nameFs:SetText(g.name)
-        if isActive then
+        if g.pending then
+            nameFs:SetText(g.name .. " |cff888888(pending)|r")
+            nameFs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2] * 0.6, S.COLOR.TEXT_DIM[3] * 0.6)
+        elseif isActive then
+            nameFs:SetText(g.name)
             nameFs:SetTextColor(1, 1, 1)
         else
+            nameFs:SetText(g.name)
             nameFs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
-        end
-
-        -- Member count badge (online / total)
-        local badgeF = CreateFrame("Frame", nil, tab)
-        badgeF:SetSize(32, 14)
-        badgeF:SetPoint("RIGHT", tab, "RIGHT", -4, 0)
-        badgeF:Show()
-        local badgeBg = badgeF:CreateTexture(nil, "BACKGROUND")
-        badgeBg:SetAllPoints()
-        badgeBg:SetColorTexture(0, 0, 0, isActive and 0.4 or 0.25)
-        local badgeFs = badgeF:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        badgeFs:SetAllPoints()
-        badgeFs:SetJustifyH("CENTER")
-        if online > 0 then
-            badgeFs:SetText("|cff22cc44" .. online .. "|r/" .. total)
-        else
-            badgeFs:SetText("|cff888899" .. total .. "|r")
         end
 
         local capturedId = g.id
@@ -349,134 +426,6 @@ function UI:RefreshTeamsGroupList()
         end)
 
         xOff = xOff + tabW
-    end
-end
-
--- ── Member presence strip ─────────────────────────────────────────────────
-
-function UI:RefreshMemberStrip(groupId)
-    local frame = UI.TeamsTab
-    if not frame then return end
-    local strip = frame.memberStrip
-
-    for i = strip:GetNumChildren(), 1, -1 do
-        select(i, strip:GetChildren()):Hide()
-    end
-
-    local g = GH.Groups:Get(groupId)
-    if not g or #(g.members or {}) == 0 then
-        strip:Hide()
-        frame:UpdateLayout(false)
-        return
-    end
-
-    -- Sort: online first, then alphabetical
-    local sorted = {}
-    for _, name in ipairs(g.members) do
-        local info   = GH.GuildData.byName[name]
-        local online = info and info.online
-        sorted[#sorted + 1] = { name = name, info = info, online = online }
-    end
-    table.sort(sorted, function(a, b)
-        if a.online ~= b.online then return (a.online and 1 or 0) > (b.online and 1 or 0) end
-        return a.name < b.name
-    end)
-
-    strip:Show()
-    frame:UpdateLayout(true)
-
-    local xOff    = 10
-    local maxX    = (strip:GetWidth() > 0 and strip:GetWidth() or 800) - 64  -- reserve for "+N more"
-    local skipped = 0
-
-    for idx, m in ipairs(sorted) do
-        local pillW = math.max(64, #m.name * 7 + 30)
-
-        if xOff + pillW > maxX then
-            skipped = #sorted - idx + 1
-            break
-        end
-
-        local online = m.online
-        local info   = m.info
-        local cr, cg, cb = 0.75, 0.75, 0.75
-        if info then cr, cg, cb = GH.GuildData:GetClassColor(info.classFileName) end
-        if not online then cr, cg, cb = cr * 0.55, cg * 0.55, cb * 0.55 end
-
-        local pill = CreateFrame("Button", nil, strip)
-        pill:SetPoint("LEFT", strip, "LEFT", xOff, 0)
-        pill:SetWidth(pillW)
-        pill:SetHeight(MBR_H - 14)
-        pill:Show()
-
-        local pillBg = pill:CreateTexture(nil, "BACKGROUND")
-        pillBg:SetAllPoints()
-        pillBg:SetColorTexture(1, 1, 1, online and 0.04 or 0)
-
-        pill:SetScript("OnEnter", function()
-            pillBg:SetColorTexture(1, 1, 1, 0.08)
-            local gt = rawget(_G, "GameTooltip")
-            if gt then
-                gt:SetOwner(pill, "ANCHOR_TOP")
-                local statusLine = online and "|cff22cc44Online|r" or "|cff888899Offline|r"
-                if info and info.rank then
-                    statusLine = statusLine .. " — " .. info.rank
-                end
-                gt:SetText(m.name, cr, cg, cb)
-                gt:AddLine(statusLine, 1, 1, 1)
-                gt:Show()
-            end
-        end)
-        pill:SetScript("OnLeave", function()
-            pillBg:SetColorTexture(1, 1, 1, online and 0.04 or 0)
-            local gt = rawget(_G, "GameTooltip")
-            if gt then gt:Hide() end
-        end)
-
-        -- Whisper on click if online
-        if online then
-            local capturedName = m.name
-            pill:SetScript("OnClick", function()
-                local fn = rawget(_G, "ChatFrame_OpenChat")
-                if fn then fn("/w " .. capturedName .. " ") end
-            end)
-        end
-
-        -- Online indicator dot
-        local dotF = CreateFrame("Frame", nil, pill)
-        dotF:SetSize(7, 7)
-        dotF:SetPoint("LEFT", pill, "LEFT", 4, 0)
-        dotF:Show()
-        local dotT = dotF:CreateTexture(nil, "OVERLAY")
-        dotT:SetAllPoints()
-        if online then
-            dotT:SetColorTexture(S.COLOR.ONLINE[1], S.COLOR.ONLINE[2], S.COLOR.ONLINE[3], 1)
-        else
-            dotT:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 0.6)
-        end
-
-        -- Name label
-        local nameFs = pill:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        nameFs:SetPoint("LEFT",  pill, "LEFT",  14, 0)
-        nameFs:SetPoint("RIGHT", pill, "RIGHT", -4, 0)
-        nameFs:SetJustifyH("LEFT")
-        nameFs:SetWordWrap(false)
-        nameFs:SetText(m.name)
-        nameFs:SetTextColor(cr, cg, cb)
-
-        xOff = xOff + pillW + 4
-    end
-
-    -- "+N more" overflow indicator
-    if skipped > 0 then
-        local moreF = CreateFrame("Frame", nil, strip)
-        moreF:SetPoint("LEFT", strip, "LEFT", xOff, 0)
-        moreF:SetSize(56, MBR_H - 14)
-        moreF:Show()
-        local moreFs = moreF:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        moreFs:SetAllPoints()
-        moreFs:SetJustifyH("LEFT")
-        moreFs:SetText("|cff888899+" .. skipped .. " more|r")
     end
 end
 
@@ -496,10 +445,98 @@ function UI:ShowTeamView(groupId)
     frame.membersBtn:SetAlpha(1)
     frame.inviteBtn:SetAlpha(1)
 
-    UI:RefreshMemberStrip(groupId)
+    UI:RefreshTeamRoster(groupId)
 
+    frame._scrolledUp = false
+    if frame.scrollToBottomBtn then frame.scrollToBottomBtn:Hide() end
     lastMsgTs = 0
     UI:RefreshTeamChatMessages(groupId)
+end
+
+function UI:RefreshTeamRoster(groupId)
+    local frame = UI.TeamsTab
+    if not frame then return end
+
+    local rosterPanel   = frame.rosterPanel
+    local rosterContent = frame.rosterContent
+    local rows          = frame.rosterRows
+
+    local g = groupId and GH.Groups:Get(groupId)
+    if not g or #(g.members or {}) == 0 then
+        rosterPanel:Hide()
+        frame:UpdateLayout(false)
+        return
+    end
+
+    local sorted = {}
+    for _, name in ipairs(g.members) do
+        local info = GH.GuildData.byName[name]
+        sorted[#sorted + 1] = { name = name, info = info, online = info and info.online }
+    end
+    table.sort(sorted, function(a, b)
+        if a.online ~= b.online then return (a.online and 1 or 0) > (b.online and 1 or 0) end
+        return a.name < b.name
+    end)
+
+    local onlineNum = 0
+    for _, m in ipairs(sorted) do if m.online then onlineNum = onlineNum + 1 end end
+    frame.rosterCountFS:SetText("Members — |cff22cc44" .. onlineNum .. "|r/" .. #sorted)
+
+    local ROW_H = 28
+    for _, row in ipairs(rows) do row:Hide() end
+
+    for i, m in ipairs(sorted) do
+        local row = rows[i]
+        if not row then
+            row = CreateFrame("Frame", nil, rosterContent)
+            row:SetHeight(ROW_H)
+
+            local rowBg = row:CreateTexture(nil, "BACKGROUND")
+            rowBg:SetAllPoints()
+            rowBg:SetColorTexture(0, 0, 0, 0)
+            row.rowBg = rowBg
+
+            local dot = row:CreateTexture(nil, "OVERLAY")
+            dot:SetSize(7, 7)
+            dot:SetPoint("LEFT", row, "LEFT", 8, 0)
+            row.dot = dot
+
+            local nameFS = S:FS(row, "OVERLAY")
+            nameFS:SetPoint("LEFT",  row, "LEFT",  20, 0)
+            nameFS:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            nameFS:SetJustifyH("LEFT")
+            row.nameFS = nameFS
+
+            rows[i] = row
+        end
+
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT",  rosterContent, "TOPLEFT",  0, -(i - 1) * ROW_H)
+        row:SetPoint("TOPRIGHT", rosterContent, "TOPRIGHT", 0, -(i - 1) * ROW_H)
+
+        local cr, cg, cb = 0.7, 0.7, 0.7
+        if m.info then cr, cg, cb = GH.GuildData:GetClassColor(m.info.classFileName) end
+        if not m.online then cr, cg, cb = cr * 0.55, cg * 0.55, cb * 0.55 end
+
+        if m.online then
+            local status = m.info and m.info.status or 0
+            if     status == 1 then row.dot:SetColorTexture(S.COLOR.AFK[1],    S.COLOR.AFK[2],    S.COLOR.AFK[3],    1)
+            elseif status == 2 then row.dot:SetColorTexture(S.COLOR.DND[1],    S.COLOR.DND[2],    S.COLOR.DND[3],    1)
+            else                    row.dot:SetColorTexture(S.COLOR.ONLINE[1], S.COLOR.ONLINE[2], S.COLOR.ONLINE[3], 1)
+            end
+        else
+            row.dot:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 0.5)
+        end
+
+        row.nameFS:SetText(m.name)
+        row.nameFS:SetTextColor(cr, cg, cb)
+        row:Show()
+    end
+
+    rosterContent:SetHeight(math.max(#sorted * ROW_H, 10))
+    rosterPanel._groupId = groupId
+    rosterPanel:Show()
+    frame:UpdateLayout(true)
 end
 
 function UI:RefreshTeamChatMessages(groupId)
@@ -521,7 +558,7 @@ function UI:RefreshTeamChatMessages(groupId)
     UI:RenderChatMessages(frame.msgScrollContent, messages, myName)
 
     C_Timer.After(0.05, function()
-        if frame.msgScrollFrame then
+        if frame.msgScrollFrame and not frame._scrolledUp then
             frame.msgScrollFrame:SetVerticalScroll(
                 frame.msgScrollFrame:GetVerticalScrollRange())
         end
@@ -580,7 +617,7 @@ function UI:RenderChatMessages(content, messages, _)
                 line:SetPoint("RIGHT", gapRow, "RIGHT", -4, 0)
                 line:SetHeight(1)
                 line:SetColorTexture(0.5, 0.5, 0.6, 0.4)
-                local gapText = gapRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                local gapText = S:FS(gapRow, "OVERLAY")
                 gapText:SetPoint("CENTER", gapRow, "CENTER")
                 gapText:SetText("History gap — some messages may be missing")
                 gapText:SetTextColor(0.7, 0.7, 0.8)
@@ -613,7 +650,7 @@ function UI:RenderChatMessages(content, messages, _)
                 stripe:SetColorTexture(1, 1, 1, 0.025)
             end
 
-            local timeFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local timeFs = S:FS(row, "OVERLAY")
             timeFs:SetPoint("LEFT", row, "LEFT", 0, 0)
             timeFs:SetText("|cff555566[" .. GH:FormatTime(msg.ts) .. "]|r ")
             timeFs:SetTextColor(1, 1, 1)
@@ -622,7 +659,7 @@ function UI:RenderChatMessages(content, messages, _)
             local senderBtn = CreateFrame("Button", nil, row)
             senderBtn:SetPoint("LEFT", row, "LEFT", timeW, 0)
             senderBtn:SetHeight(14)
-            local senderFs = senderBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            local senderFs = S:FS(senderBtn, "OVERLAY", "normal")
             senderFs:SetAllPoints()
             senderFs:SetJustifyH("LEFT")
             senderFs:SetText(shortSender .. ":")
@@ -651,7 +688,7 @@ function UI:RenderChatMessages(content, messages, _)
             end
 
             local bodyIndent = timeW + senderW + 4
-            local bodyFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local bodyFs = S:FS(row, "OVERLAY")
             bodyFs:SetPoint("LEFT",  row, "LEFT",  bodyIndent, 0)
             bodyFs:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             bodyFs:SetJustifyH("LEFT")
@@ -695,14 +732,14 @@ function UI:ShowTeamMembersDialog(groupId)
     accent:SetPoint("TOPLEFT")
     accent:SetPoint("TOPRIGHT")
     accent:SetHeight(2)
-    accent:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 1)
+    accent:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.80)
 
-    local title = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = S:FS(dlg, "OVERLAY", "normal")
     title:SetPoint("TOP", dlg, "TOP", 0, -14)
     title:SetText(g.name .. " — Members")
     title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
 
-    local roleNote = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local roleNote = S:FS(dlg, "OVERLAY")
     roleNote:SetPoint("TOP", title, "BOTTOM", 0, -2)
     if isOfficer then
         roleNote:SetText("Officers only: invite members who are currently online")
@@ -745,7 +782,7 @@ function UI:ShowTeamMembersDialog(groupId)
                 dot:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 1)
             end
 
-            local nm = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            local nm = S:FS(row, "OVERLAY", "normal")
             nm:SetPoint("LEFT", row, "LEFT", 20, 0)
             nm:SetText(memberName)
             nm:SetTextColor(cr, cg, cb)
@@ -762,9 +799,6 @@ function UI:ShowTeamMembersDialog(groupId)
                     end
                     PopulateMembers()
                     UI:RefreshTeamsGroupList()
-                    if selected == groupId then
-                        UI:RefreshMemberStrip(groupId)
-                    end
                 end)
             end
         end
@@ -780,7 +814,7 @@ function UI:ShowTeamMembersDialog(groupId)
         local inviteBtn = S:Button(dlg, "Invite", 72, 26)
         inviteBtn:SetPoint("LEFT", inviteBox, "RIGHT", 4, 0)
 
-        local hint = inviteBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local hint = S:FS(inviteBox, "OVERLAY")
         hint:SetPoint("LEFT", inviteBox, "LEFT", 8, 0)
         hint:SetTextColor(0.4, 0.4, 0.5)
         hint:SetText("Online member name…")
@@ -831,7 +865,7 @@ function UI:ShowTeamMembersDialog(groupId)
                         r:SetHeight(22)
                         r:SetPoint("LEFT",  sugC, "LEFT",  0, 0)
                         r:SetPoint("RIGHT", sugC, "RIGHT", 0, 0)
-                        r.text = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                        r.text = S:FS(r, "OVERLAY")
                         r.text:SetPoint("LEFT", r, "LEFT", 6, 0)
                         r.text:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
                         r.bg = r:CreateTexture(nil, "BACKGROUND")
@@ -903,14 +937,14 @@ function UI:ShowTeamInvitePopup(groupId, teamName, inviterName)
     accent:SetPoint("TOPLEFT")
     accent:SetPoint("TOPRIGHT")
     accent:SetHeight(2)
-    accent:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 1)
+    accent:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.80)
 
-    local heading = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local heading = S:FS(dlg, "OVERLAY", "normal")
     heading:SetPoint("TOP", dlg, "TOP", 0, -14)
     heading:SetText("Team Invite")
     heading:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
 
-    local body = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local body = S:FS(dlg, "OVERLAY")
     body:SetPoint("TOP", heading, "BOTTOM", 0, -6)
     body:SetText("|cffffd700" .. inviterName .. "|r invited you to join |cffffd700"
                  .. teamName .. "|r")
@@ -944,12 +978,12 @@ end
 
 function UI:ShowTeamNameDialog(existingName, callback)
     local dlg = CreateFrame("Frame", "GuildHubTeamNameDialog", UIParent)
-    dlg:SetSize(320, 110)
+    dlg:SetSize(320, 130)
     dlg:SetPoint("CENTER", UIParent, "CENTER", 0, 60)
     dlg:SetFrameStrata("DIALOG")
     S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
 
-    local title = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = S:FS(dlg, "OVERLAY", "normal")
     title:SetPoint("TOP", dlg, "TOP", 0, -12)
     title:SetText(existingName and "Rename Team" or "New Team Name")
     title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
@@ -959,15 +993,31 @@ function UI:ShowTeamNameDialog(existingName, callback)
     if existingName then eb:SetText(existingName) end
     eb:SetFocus()
 
+    local errorFs = S:FS(dlg, "OVERLAY")
+    errorFs:SetPoint("TOP", eb, "BOTTOM", 0, -4)
+    errorFs:SetTextColor(1, 0.3, 0.3)
+    errorFs:Hide()
+
     local okBtn = S:Button(dlg, "OK", 80, 26)
     okBtn:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 30, 12)
 
     local cancelBtn = S:DangerButton(dlg, "Cancel", 80, 26)
     cancelBtn:SetPoint("BOTTOMRIGHT", dlg, "BOTTOMRIGHT", -30, 12)
 
+    local normalizedExisting = existingName and existingName:lower()
+
     local function Confirm()
         local name = eb:GetText():match("^%s*(.-)%s*$")
-        if name ~= "" then callback(name) end
+        if name == "" then return end
+        local lower = name:lower()
+        for _, g in ipairs(GH.Groups:GetAll()) do
+            if g.name:lower() == lower and g.name:lower() ~= normalizedExisting then
+                errorFs:SetText('"' .. name .. '" already exists.')
+                errorFs:Show()
+                return
+            end
+        end
+        callback(name)
         dlg:Hide()
     end
     okBtn:SetScript("OnClick", Confirm)
@@ -977,4 +1027,185 @@ end
 
 function UI:ShowGroupNameDialog(existingName, callback)
     UI:ShowTeamNameDialog(existingName, callback)
+end
+
+-- ── GM duplicate conflict queue ───────────────────────────────────────────
+
+UI._conflictQueue    = {}
+UI._conflictShown    = false
+
+function UI:EnqueueConflict(pendingId, canonicalId)
+    -- Dedup: skip if this pair is already queued or being shown
+    for _, entry in ipairs(UI._conflictQueue) do
+        if entry[1] == pendingId and entry[2] == canonicalId then return end
+    end
+    if UI._conflictActive
+       and UI._conflictActive[1] == pendingId
+       and UI._conflictActive[2] == canonicalId then
+        return
+    end
+    UI._conflictQueue[#UI._conflictQueue + 1] = { pendingId, canonicalId }
+    if not UI._conflictShown then
+        local next = table.remove(UI._conflictQueue, 1)
+        if next then UI:ShowTeamConflictDialog(next[1], next[2]) end
+    end
+end
+
+function UI:ShowTeamConflictDialog(pendingId, canonicalId)
+    UI._conflictShown  = true
+    UI._conflictActive = { pendingId, canonicalId }
+
+    local pendingGroup   = GH.DB:GetGroups()[pendingId]
+    local canonicalGroup = GH.DB:GetGroups()[canonicalId]
+    if not pendingGroup or not canonicalGroup then
+        UI._conflictShown  = false
+        UI._conflictActive = nil
+        local next = table.remove(UI._conflictQueue, 1)
+        if next then UI:ShowTeamConflictDialog(next[1], next[2]) end
+        return
+    end
+
+    local teamName = canonicalGroup.name
+
+    local dlg = CreateFrame("Frame", nil, UIParent)
+    dlg:SetSize(400, 320)
+    dlg:SetFrameStrata("DIALOG")
+    local mainWin = rawget(_G, "GuildHubMainWindow")
+    if mainWin then
+        dlg:SetPoint("TOPLEFT", mainWin, "TOPRIGHT", 4, 0)
+    else
+        dlg:SetPoint("CENTER")
+    end
+    S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
+
+    local accent = dlg:CreateTexture(nil, "ARTWORK")
+    accent:SetPoint("TOPLEFT"); accent:SetPoint("TOPRIGHT"); accent:SetHeight(2)
+    accent:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.80)
+
+    local titleFs = S:FS(dlg, "OVERLAY", "normal")
+    titleFs:SetPoint("TOP", dlg, "TOP", 0, -14)
+    titleFs:SetText("Duplicate Team Detected")
+    titleFs:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+
+    local bodyFs = S:FS(dlg, "OVERLAY")
+    bodyFs:SetPoint("TOP", titleFs, "BOTTOM", 0, -6)
+    bodyFs:SetText('Two teams share the name "' .. teamName .. '". Choose a resolution.')
+    bodyFs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+
+    -- Helper: count online members
+    local function OnlineCount(members)
+        local n = 0
+        for _, name in ipairs(members or {}) do
+            local info = GH.GuildData.byName[name]
+            if info and info.online then n = n + 1 end
+        end
+        return n
+    end
+
+    -- Side-by-side info panels
+    local function MakePanel(parent, label, group, xAnchor, xOff)
+        local pf = CreateFrame("Frame", nil, parent)
+        pf:SetSize(172, 80)
+        pf:SetPoint(xAnchor, parent, xAnchor, xOff, -80)
+        S:Bg(pf, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 1)
+
+        local lbl = S:FS(pf, "OVERLAY")
+        lbl:SetPoint("TOP", pf, "TOP", 0, -6)
+        lbl:SetText(label)
+        lbl:SetTextColor(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3])
+
+        local nm = S:FS(pf, "OVERLAY", "normal")
+        nm:SetPoint("TOP", lbl, "BOTTOM", 0, -2)
+        nm:SetText(group.name)
+        nm:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+
+        local total   = #(group.members or {})
+        local online  = OnlineCount(group.members)
+        local countFs = S:FS(pf, "OVERLAY")
+        countFs:SetPoint("TOP", nm, "BOTTOM", 0, -4)
+        countFs:SetText("Members: |cff22cc44" .. online .. "|r/" .. total)
+        countFs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+        return pf
+    end
+
+    MakePanel(dlg, "(older — canonical)", canonicalGroup, "TOPLEFT",  14)
+    MakePanel(dlg, "(newer — pending)",   pendingGroup,   "TOPRIGHT", -14)
+
+    -- Shared close logic
+    local function CloseAndNext()
+        UI._conflictShown  = false
+        UI._conflictActive = nil
+        dlg:Hide()
+        local next = table.remove(UI._conflictQueue, 1)
+        if next then
+            C_Timer.After(0.1, function() UI:ShowTeamConflictDialog(next[1], next[2]) end)
+        end
+    end
+
+    -- Shared resolution dispatcher
+    local function Resolve(action, newName)
+        local payload = table.concat(
+            { "TMGMR", action, pendingId, canonicalId, newName or "" }, "\30")
+        GH.Groups:_Send(payload)
+        GH.Groups:_ExecuteResolution(action, pendingId, canonicalId, newName)
+        CloseAndNext()
+    end
+
+    -- Rename sub-panel (hidden until Rename button clicked)
+    -- Positioned between info panels and action buttons (100px above dialog bottom).
+    local renamePanel = CreateFrame("Frame", nil, dlg)
+    renamePanel:SetPoint("TOPLEFT",  dlg, "BOTTOMLEFT",  10, 100)
+    renamePanel:SetPoint("TOPRIGHT", dlg, "BOTTOMRIGHT", -10, 100)
+    renamePanel:SetHeight(50)
+    renamePanel:Hide()
+
+    local renameEb = S:EditBox(renamePanel, 230, 26, 60)
+    renameEb:SetPoint("LEFT", renamePanel, "LEFT", 0, 0)
+
+    local renameConfirm = S:Button(renamePanel, "Confirm", 90, 26)
+    renameConfirm:SetPoint("LEFT", renameEb, "RIGHT", 6, 0)
+
+    local renameErrorFs = S:FS(renamePanel, "OVERLAY")
+    renameErrorFs:SetPoint("TOPLEFT", renameEb, "BOTTOMLEFT", 0, -2)
+    renameErrorFs:SetTextColor(1, 0.3, 0.3)
+    renameErrorFs:Hide()
+
+    renameConfirm:SetScript("OnClick", function()
+        local newName = renameEb:GetText():match("^%s*(.-)%s*$")
+        if newName == "" then return end
+        local lower = newName:lower()
+        for _, g in ipairs(GH.Groups:GetAll()) do
+            if g.name:lower() == lower and g.id ~= pendingId then
+                renameErrorFs:SetText('"' .. newName .. '" already exists.')
+                renameErrorFs:Show()
+                return
+            end
+        end
+        Resolve("rename", newName)
+    end)
+
+    -- Four action buttons
+    local btnY = 14
+    local btnH = 26
+
+    local mergeBtn = S:Button(dlg, "Merge Members", 110, btnH)
+    mergeBtn:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 10, btnY)
+    mergeBtn:SetScript("OnClick", function() Resolve("merge") end)
+
+    local keepBtn = S:Button(dlg, "Keep Both", 84, btnH)
+    keepBtn:SetPoint("LEFT", mergeBtn, "RIGHT", 4, 0)
+    keepBtn:SetScript("OnClick", function() Resolve("keep") end)
+
+    local deleteBtn = S:DangerButton(dlg, "Delete Newer", 100, btnH)
+    deleteBtn:SetPoint("LEFT", keepBtn, "RIGHT", 4, 0)
+    deleteBtn:SetScript("OnClick", function() Resolve("delete") end)
+
+    local renameBtn = S:Button(dlg, "Rename Newer", 106, btnH)
+    renameBtn:SetPoint("LEFT", deleteBtn, "RIGHT", 4, 0)
+    renameBtn:SetScript("OnClick", function()
+        renamePanel:SetShown(not renamePanel:IsShown())
+        if renamePanel:IsShown() then renameEb:SetFocus() end
+    end)
+
+    dlg:Show()
 end

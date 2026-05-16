@@ -8,6 +8,10 @@
 --   TMREM \30 groupId \30 removedName
 --   TMCHK \30 requesterName              (login sync request)
 --   TMSYN \30 groupId \30 teamName \30 membersCSV \30 channelId \30 targetName
+--   TMOFC \30 groupId \30 teamName \30 membersCSV \30 channelId \30 creatorRank \30 creator \30 createdAt \30 pending
+--   TMDLT \30 groupId
+--   TMDPC \30 pendingId \30 canonicalId  (duplicate conflict → GM)
+--   TMGMR \30 action \30 pendingId \30 canonicalId \30 [newName]  (GM resolution)
 
 local GH     = GuildHub
 local Groups = GH.Groups
@@ -23,6 +27,8 @@ local TM_CHK = "TMCHK"
 local TM_SYN = "TMSYN"
 local TM_OFC = "TMOFC"   -- officer visibility sync (no membership implied)
 local TM_DLT = "TMDLT"  -- broadcast team deletion to all officers
+local TM_DPC = "TMDPC"  -- duplicate conflict notification → GM
+local TM_GMR = "TMGMR"  -- GM resolution broadcast → all officers
 
 Groups.pendingInvites = {}   -- [groupId] = { teamName, inviter }
 
@@ -62,6 +68,8 @@ function Groups:GetAll()
                 members   = members,
                 color     = g.color,
                 channelId = g.channelId,
+                pending   = g.pending,
+                createdAt = g.createdAt,
             }
         end
     end
@@ -82,6 +90,7 @@ function Groups:Create(name)
         color       = "7289DA",
         creator     = GH:GetPlayerName(),
         creatorRank = rankIndex or 1,
+        createdAt   = time(),
     })
     -- Notify all online officers so they see the new team immediately.
     C_Timer.After(0.5, function()
@@ -268,6 +277,98 @@ function Groups:_SyncToMember(groupId, g, targetName)
     Groups:_Send(payload)
 end
 
+function Groups:_CheckForDuplicate(incomingId, incomingName)
+    local normalizedName = incomingName:lower()
+    local incomingGroup  = GH.DB:GetGroups()[incomingId]
+    if not incomingGroup then return end
+
+    local canonicalId, pendingId
+
+    for id, g in pairs(GH.DB:GetGroups()) do
+        if id ~= incomingId and g.name:lower() == normalizedName then
+            local incomingTs = incomingGroup.createdAt or 0
+            local existingTs = g.createdAt or 0
+            if incomingTs < existingTs or (incomingTs == existingTs and incomingId < id) then
+                canonicalId = incomingId
+                pendingId   = id
+            else
+                canonicalId = id
+                pendingId   = incomingId
+            end
+            break
+        end
+    end
+
+    if not pendingId then return end
+
+    local pendingGroup = GH.DB:GetGroups()[pendingId]
+    if pendingGroup and not pendingGroup.pending then
+        pendingGroup.pending = true
+        GH.DB:SaveGroup(pendingId, pendingGroup)
+    end
+
+    if GH:IsGuildMaster() then
+        if GH.UI and GH.UI.EnqueueConflict then
+            GH.UI:EnqueueConflict(pendingId, canonicalId)
+        end
+    else
+        local payload = table.concat({ TM_DPC, pendingId, canonicalId }, SEP)
+        Groups:_Send(payload)
+    end
+end
+
+function Groups:_ExecuteResolution(action, pendingId, canonicalId, newName)
+    local pendingGroup   = GH.DB:GetGroups()[pendingId]
+    local canonicalGroup = GH.DB:GetGroups()[canonicalId]
+
+    if action == "merge" then
+        if pendingGroup and canonicalGroup then
+            for _, name in ipairs(pendingGroup.members or {}) do
+                local inCanonical = false
+                for _, n in ipairs(canonicalGroup.members or {}) do
+                    if n == name then inCanonical = true; break end
+                end
+                if not inCanonical then
+                    canonicalGroup.members[#canonicalGroup.members + 1] = name
+                end
+            end
+            GH.DB:SaveGroup(canonicalId, canonicalGroup)
+            for _, name in ipairs(pendingGroup.members or {}) do
+                Groups:_SyncToMember(canonicalId, canonicalGroup, name)
+            end
+            Groups:_OfficerSync(canonicalId, canonicalGroup)
+        end
+        for _, name in ipairs(pendingGroup and pendingGroup.members or {}) do
+            Groups:_SendRemoved(pendingId, name)
+        end
+        GH.DB:DeleteGroup(pendingId)
+
+    elseif action == "keep" then
+        if pendingGroup then
+            pendingGroup.pending = false
+            GH.DB:SaveGroup(pendingId, pendingGroup)
+        end
+
+    elseif action == "delete" then
+        if pendingGroup then
+            for _, name in ipairs(pendingGroup.members or {}) do
+                Groups:_SendRemoved(pendingId, name)
+            end
+        end
+        GH.DB:DeleteGroup(pendingId)
+
+    elseif action == "rename" and newName and newName ~= "" then
+        if pendingGroup then
+            pendingGroup.name    = newName
+            pendingGroup.pending = false
+            GH.DB:SaveGroup(pendingId, pendingGroup)
+            Groups:_OfficerSync(pendingId, pendingGroup)
+        end
+    end
+
+    if GH.UI then GH.UI:RefreshTeamsGroupList() end
+end
+
 function Groups:_SendRemoved(groupId, memberName)
     local payload = table.concat({ TM_REM, groupId, memberName }, SEP)
     Groups:_Send(payload)
@@ -276,14 +377,18 @@ end
 -- Broadcast team data to all officers without implying membership.
 -- Sent on team creation, member changes, and login sync for officer requesters.
 function Groups:_OfficerSync(groupId, g)
-    local membersStr = table.concat(g.members or {}, ",")
+    local membersStr   = table.concat(g.members or {}, ",")
+    local createdAtStr = tostring(g.createdAt or 0)
+    local pendingStr   = g.pending and "1" or "0"
     local payload = table.concat(
         { TM_OFC, groupId, g.name, membersStr, g.channelId or "",
-          tostring(g.creatorRank or ""), g.creator or "" }, SEP)
+          tostring(g.creatorRank or ""), g.creator or "",
+          createdAtStr, pendingStr }, SEP)
     if #payload > 250 then
         payload = table.concat(
             { TM_OFC, groupId, g.name, "", g.channelId or "",
-              tostring(g.creatorRank or ""), g.creator or "" }, SEP)
+              tostring(g.creatorRank or ""), g.creator or "",
+              createdAtStr, pendingStr }, SEP)
     end
     Groups:_Send(payload)
 end
@@ -409,12 +514,14 @@ function Groups:OnAddonMessage(payload, _)
     elseif msgType == TM_OFC then
         if GH:IsOfficer() then
             if #parts >= 5 then
-                local groupId    = parts[2]
-                local teamName   = parts[3]
-                local membersStr = parts[4]
-                local channelId  = parts[5] ~= "" and parts[5] or nil
-                local creatorRank = tonumber(parts[6])
-                local creator    = (parts[7] and parts[7] ~= "") and parts[7] or nil
+                local groupId           = parts[2]
+                local teamName          = parts[3]
+                local membersStr        = parts[4]
+                local channelId         = parts[5] ~= "" and parts[5] or nil
+                local creatorRank       = tonumber(parts[6])
+                local creator           = (parts[7] and parts[7] ~= "") and parts[7] or nil
+                local incomingCreatedAt = tonumber(parts[8]) or 0
+                local incomingPending   = parts[9] == "1"
 
                 local members = {}
                 if membersStr ~= "" then
@@ -431,9 +538,11 @@ function Groups:OnAddonMessage(payload, _)
                     color       = existing and existing.color or "7289DA",
                     creator     = creator or (existing and existing.creator),
                     creatorRank = creatorRank or (existing and existing.creatorRank),
+                    createdAt   = incomingCreatedAt ~= 0 and incomingCreatedAt
+                                  or (existing and existing.createdAt) or 0,
+                    pending     = incomingPending or (existing and existing.pending) or false,
                 })
 
-                -- Ensure a local chat record exists so the officer can view messages.
                 if channelId and not GH.DB:GetChat(channelId) then
                     GH.DB:SaveChat(channelId, {
                         name     = teamName,
@@ -442,6 +551,7 @@ function Groups:OnAddonMessage(payload, _)
                     })
                 end
 
+                Groups:_CheckForDuplicate(groupId, teamName)
                 if GH.UI then GH.UI:RefreshTeamsGroupList() end
             end
         end
@@ -455,6 +565,28 @@ function Groups:OnAddonMessage(payload, _)
                 GH.DB:DeleteGroup(groupId)
                 if GH.UI then GH.UI:RefreshTeamsGroupList() end
             end
+        end
+
+    -- ── TMDPC: duplicate team conflict notification (received by GM) ─────────
+    elseif msgType == TM_DPC then
+        if GH:IsGuildMaster() and #parts >= 3 then
+            local pendingId   = parts[2]
+            local canonicalId = parts[3]
+            if GH.DB:GetGroups()[pendingId] and GH.DB:GetGroups()[canonicalId] then
+                if GH.UI and GH.UI.EnqueueConflict then
+                    GH.UI:EnqueueConflict(pendingId, canonicalId)
+                end
+            end
+        end
+
+    -- ── TMGMR: GM resolution — all officers execute ──────────────────────────
+    elseif msgType == TM_GMR then
+        if GH:IsOfficer() and #parts >= 4 then
+            local action      = parts[2]
+            local pendingId   = parts[3]
+            local canonicalId = parts[4]
+            local newName     = (parts[5] and parts[5] ~= "") and parts[5] or nil
+            Groups:_ExecuteResolution(action, pendingId, canonicalId, newName)
         end
 
     -- ── TMSYN: team data synced to us ────────────────────────────────────
