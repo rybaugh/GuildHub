@@ -11,14 +11,15 @@ local GetTime     = _G.GetTime
 local activeChatId  = nil
 local lastRefreshTs = 0
 local lastRefreshId = nil
+local tabScrollX    = 0  -- horizontal pixel offset into the tab strip
 
-local TAB_H = 38
-local INP_H = 46
+local TAB_H   = 38
+local INP_H   = 46
+local PANEL_W = 190
 
 local function GuildId()     return GH.Chat.GUILD_ID   end
 local function OfficerId()   return GH.Chat.OFFICER_ID  end
-local function XGuildId()    return GH.Chat.XGUILD_ID   end
-local function IsBuiltin(id) return id == GuildId() or id == OfficerId() or id == XGuildId() end
+local function IsBuiltin(id) return id == GuildId() or id == OfficerId() end
 
 -- Returns true if this channel is owned by a team (managed via the Teams tab).
 local function IsTeamChannel(channelId)
@@ -30,7 +31,7 @@ end
 
 -- ── Construction ──────────────────────────────────────────────────────────
 
-function UI:CreateChatTab(parent, w)
+function UI:CreateChatTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints(parent)
     frame:Hide()
@@ -41,13 +42,15 @@ function UI:CreateChatTab(parent, w)
     tabStrip:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
     tabStrip:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     tabStrip:SetHeight(TAB_H)
-    S:Bg(tabStrip, S.COLOR.SIDEBAR[1], S.COLOR.SIDEBAR[2], S.COLOR.SIDEBAR[3], 1)
+    S:GradientBg(tabStrip, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
 
     local stripDiv = tabStrip:CreateTexture(nil, "ARTWORK")
     stripDiv:SetPoint("BOTTOMLEFT",  tabStrip)
     stripDiv:SetPoint("BOTTOMRIGHT", tabStrip)
     stripDiv:SetHeight(1)
-    stripDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.7)
+    stripDiv:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.15)
 
     -- Right-pinned action buttons
     local newChanBtn = S:Button(tabStrip, "+ New Channel", 112, 26)
@@ -82,37 +85,144 @@ function UI:CreateChatTab(parent, w)
     frame.manageBtn = manageBtn
     frame.deleteBtn = deleteBtn
 
+    -- Tab-strip scroll arrows (shown when tabs overflow the available width)
+    local scrollRBtn = S:Button(tabStrip, ">", 22, 26)
+    scrollRBtn:SetPoint("RIGHT", manageBtn, "LEFT", -8, 0)
+    scrollRBtn:SetScript("OnClick", function()
+        tabScrollX = tabScrollX + 120
+        UI:RefreshChatChannelList()
+    end)
+
+    local scrollLBtn = S:Button(tabStrip, "<", 22, 26)
+    scrollLBtn:SetPoint("RIGHT", scrollRBtn, "LEFT", -2, 0)
+    scrollLBtn:SetScript("OnClick", function()
+        tabScrollX = math.max(0, tabScrollX - 120)
+        UI:RefreshChatChannelList()
+    end)
+
+    frame.scrollLBtn = scrollLBtn
+    frame.scrollRBtn = scrollRBtn
+
     -- Tab container: fills left portion of strip, clips overflow
     local tabArea = CreateFrame("Frame", nil, tabStrip)
     tabArea:SetPoint("TOPLEFT",    tabStrip,  "TOPLEFT",    2, 0)
     tabArea:SetPoint("BOTTOMLEFT", tabStrip,  "BOTTOMLEFT", 2, 0)
-    tabArea:SetPoint("RIGHT",      manageBtn, "LEFT", -8, 0)
+    tabArea:SetPoint("RIGHT",      scrollLBtn, "LEFT", -4, 0)
     tabArea:SetClipsChildren(true)
     frame.tabArea = tabArea
+
+    -- ── Chat members panel (right sidebar) ───────────────────────────────
+    local chatMembersPanel = CreateFrame("Frame", nil, frame)
+    chatMembersPanel:SetWidth(PANEL_W)
+    chatMembersPanel:SetPoint("TOPRIGHT",    frame, "TOPRIGHT",    0, -(TAB_H + 1))
+    chatMembersPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, INP_H)
+    S:GradientBg(chatMembersPanel, "VERTICAL",
+        S.COLOR.SIDEBAR[1] + 0.005, S.COLOR.SIDEBAR[2] + 0.004, S.COLOR.SIDEBAR[3] + 0.010, 1,
+        S.COLOR.SIDEBAR[1],         S.COLOR.SIDEBAR[2],         S.COLOR.SIDEBAR[3],          1)
+
+    local panelDiv = chatMembersPanel:CreateTexture(nil, "BORDER")
+    panelDiv:SetWidth(1)
+    panelDiv:SetPoint("TOPLEFT",    chatMembersPanel, "TOPLEFT",    0, 0)
+    panelDiv:SetPoint("BOTTOMLEFT", chatMembersPanel, "BOTTOMLEFT", 0, 0)
+    panelDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.6)
+
+    local panelHdr = CreateFrame("Frame", nil, chatMembersPanel)
+    panelHdr:SetPoint("TOPLEFT",  chatMembersPanel, "TOPLEFT",  0, 0)
+    panelHdr:SetPoint("TOPRIGHT", chatMembersPanel, "TOPRIGHT", 0, 0)
+    panelHdr:SetHeight(34)
+    S:GradientBg(panelHdr, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
+    local panelHdrSep = panelHdr:CreateTexture(nil, "ARTWORK")
+    panelHdrSep:SetPoint("BOTTOMLEFT",  panelHdr, "BOTTOMLEFT")
+    panelHdrSep:SetPoint("BOTTOMRIGHT", panelHdr, "BOTTOMRIGHT")
+    panelHdrSep:SetHeight(1)
+    panelHdrSep:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.5)
+
+    local panelCountFS = S:FS(panelHdr, "OVERLAY")
+    panelCountFS:SetPoint("LEFT",  panelHdr, "LEFT",  10, 0)
+    panelCountFS:SetPoint("RIGHT", panelHdr, "RIGHT", -6, 0)
+    panelCountFS:SetJustifyH("LEFT")
+    panelCountFS:SetText("Members")
+    panelCountFS:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+
+    local panelSf = CreateFrame("ScrollFrame", nil, chatMembersPanel)
+    panelSf:SetPoint("TOPLEFT",     chatMembersPanel, "TOPLEFT",     1, -36)
+    panelSf:SetPoint("BOTTOMRIGHT", chatMembersPanel, "BOTTOMRIGHT", -4, 4)
+    panelSf:EnableMouseWheel(true)
+    panelSf:SetScript("OnMouseWheel", function(sf, delta)
+        local max = sf:GetVerticalScrollRange()
+        sf:SetVerticalScroll(math.max(0, math.min(max, sf:GetVerticalScroll() - delta * 30)))
+    end)
+    local panelContent = CreateFrame("Frame", nil, panelSf)
+    panelSf:SetScrollChild(panelContent)
+    local function SyncPanelWidth()
+        local w = panelSf:GetWidth()
+        if w > 0 then panelContent:SetWidth(w) end
+    end
+    panelSf:SetScript("OnSizeChanged", SyncPanelWidth)
+    C_Timer.After(0, SyncPanelWidth)
+
+    frame.chatMembersPanel   = chatMembersPanel
+    frame.chatMembersContent = panelContent
+    frame.chatMembersCountFS = panelCountFS
+    frame.chatMemberRows     = {}
 
     -- ── Message area ──────────────────────────────────────────────────────
     local msgPanel = CreateFrame("Frame", nil, frame)
     msgPanel:SetPoint("TOPLEFT",     frame, "TOPLEFT",     0, -(TAB_H + 1))
-    msgPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, INP_H)
+    msgPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PANEL_W, INP_H)
     S:Bg(msgPanel, 0, 0, 0, 0.08)
     frame.msgPanel = msgPanel
 
-    local msgSf = CreateFrame("ScrollFrame", nil, msgPanel, "UIPanelScrollFrameTemplate")
+    -- Plain scroll frame — no template scrollbar widget to escape the window edge.
+    local msgSf = CreateFrame("ScrollFrame", nil, msgPanel)
     msgSf:SetPoint("TOPLEFT",     msgPanel, "TOPLEFT",     4, -4)
-    msgSf:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -20, 4)
+    msgSf:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -4, 4)
+    msgSf:EnableMouseWheel(true)
+    msgSf:SetScript("OnMouseWheel", function(self, delta)
+        local max = self:GetVerticalScrollRange()
+        local new = math.max(0, math.min(max, self:GetVerticalScroll() - delta * 40))
+        self:SetVerticalScroll(new)
+        local atBottom = max <= 0 or new >= max - 1
+        frame._scrolledUp = not atBottom
+        if frame.scrollToBottomBtn then frame.scrollToBottomBtn:SetShown(not atBottom) end
+    end)
 
-    -- The template scrollbar is anchored to the right of msgSf and can extend
-    -- past the window border in 12.x. Pin it explicitly inside msgPanel.
-    local sb = msgSf.ScrollBar
-    if sb then
-        sb:ClearAllPoints()
-        sb:SetPoint("TOPRIGHT",    msgPanel, "TOPRIGHT",    -2, -4)
-        sb:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -2,  4)
-    end
+    local scrollToBottomBtn = CreateFrame("Button", nil, msgPanel)
+    scrollToBottomBtn:SetSize(34, 34)
+    scrollToBottomBtn:SetPoint("BOTTOMRIGHT", msgPanel, "BOTTOMRIGHT", -10, 10)
+    scrollToBottomBtn:SetFrameLevel(msgPanel:GetFrameLevel() + 20)
+    scrollToBottomBtn:Hide()
+    local _stbArrow = scrollToBottomBtn:CreateTexture(nil, "ARTWORK")
+    _stbArrow:SetAllPoints()
+    _stbArrow:SetTexture("Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up")
+    scrollToBottomBtn:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(scrollToBottomBtn, "ANCHOR_TOP")
+        GameTooltip:SetText("Jump to latest", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    scrollToBottomBtn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    scrollToBottomBtn:SetScript("OnClick", function()
+        msgSf:SetVerticalScroll(msgSf:GetVerticalScrollRange())
+        frame._scrolledUp = false
+        scrollToBottomBtn:Hide()
+    end)
+    frame.scrollToBottomBtn = scrollToBottomBtn
 
     local msgContent = CreateFrame("Frame", nil, msgSf)
-    msgContent:SetSize(w - 26, 10)
+    msgContent:SetHeight(10)
     msgSf:SetScrollChild(msgContent)
+
+    local function SyncChatMsgWidth()
+        local sfW = msgSf:GetWidth()
+        if sfW > 0 then msgContent:SetWidth(sfW) end
+    end
+    msgSf:SetScript("OnSizeChanged", SyncChatMsgWidth)
+    C_Timer.After(0, SyncChatMsgWidth)
+
     frame.msgScrollFrame   = msgSf
     frame.msgScrollContent = msgContent
 
@@ -148,6 +258,8 @@ function UI:CreateChatTab(parent, w)
             lastRefreshTs = 0
             UI:RefreshChatMessages(activeChatId)
         end
+        frame._scrolledUp = false
+        if frame.scrollToBottomBtn then frame.scrollToBottomBtn:Hide() end
         C_Timer.After(0.05, function()
             if frame.msgScrollFrame then
                 frame.msgScrollFrame:SetVerticalScroll(
@@ -162,16 +274,20 @@ function UI:CreateChatTab(parent, w)
         eb:ClearFocus()
     end)
 
-    local placeholder = msgPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local placeholder = S:FS(msgPanel, "OVERLAY", "normal")
     placeholder:SetPoint("CENTER", msgPanel, "CENTER")
     placeholder:SetText("Select a channel")
     placeholder:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     frame.chatPlaceholder = placeholder
 
+    local _onShowBusy = false
     frame:SetScript("OnShow", function()
+        if _onShowBusy then return end
+        _onShowBusy = true
         if not activeChatId then activeChatId = GuildId() end
         UI:RefreshChatChannelList()
         UI:SelectChatChannel(activeChatId)
+        _onShowBusy = false
     end)
 
     UI:RefreshChatChannelList()
@@ -189,7 +305,7 @@ function UI:RefreshChatChannelList()
     end
 
     local channels = GH.Chat:GetChannels()
-    local xOff = 0
+    local xOff = -tabScrollX
 
     for idx, ch in ipairs(channels) do
         local isActive  = (ch.id == activeChatId)
@@ -290,7 +406,7 @@ function UI:RefreshChatChannelList()
         end
 
         -- Name label
-        local nameFs = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local nameFs = S:FS(tab, "OVERLAY")
         nameFs:SetPoint("LEFT",  tab, "LEFT",  26, 0)
         nameFs:SetPoint("RIGHT", tab, "RIGHT", unread > 0 and -34 or -6, 0)
         nameFs:SetJustifyH("LEFT")
@@ -320,7 +436,7 @@ function UI:RefreshChatChannelList()
             local badgeBg = badgeF:CreateTexture(nil, "BACKGROUND")
             badgeBg:SetAllPoints()
             badgeBg:SetColorTexture(0.85, 0.15, 0.15, 0.90)
-            local badgeFs = badgeF:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local badgeFs = S:FS(badgeF, "OVERLAY")
             badgeFs:SetAllPoints()
             badgeFs:SetJustifyH("CENTER")
             badgeFs:SetText(unread > 99 and "99+" or tostring(unread))
@@ -337,6 +453,28 @@ function UI:RefreshChatChannelList()
 
         xOff = xOff + tabW
     end
+
+    -- Show/enable scroll arrows based on overflow state.
+    -- xOff here = totalTabWidth - tabScrollX, so totalTabWidth = xOff + tabScrollX.
+    local areaW = tabArea:GetWidth()
+    local totalTabW = xOff + tabScrollX
+    local canLeft  = tabScrollX > 0
+    local canRight = areaW > 0 and totalTabW > tabScrollX + areaW
+
+    -- Clamp scroll so we never over-scroll past the end.
+    if areaW > 0 and tabScrollX > 0 and not canRight then
+        local maxScroll = math.max(0, totalTabW - areaW)
+        if tabScrollX > maxScroll then
+            tabScrollX = maxScroll
+        end
+    end
+
+    frame.scrollLBtn:SetShown(canLeft or canRight)
+    frame.scrollRBtn:SetShown(canLeft or canRight)
+    frame.scrollLBtn:SetEnabled(canLeft)
+    frame.scrollRBtn:SetEnabled(canRight)
+    frame.scrollLBtn:SetAlpha(canLeft  and 1 or 0.35)
+    frame.scrollRBtn:SetAlpha(canRight and 1 or 0.35)
 end
 
 -- ── Channel selection ─────────────────────────────────────────────────────
@@ -364,7 +502,12 @@ function UI:SelectChatChannel(channelId)
 
     GH.Chat:MarkRead(channelId)
     lastRefreshTs = 0
+    if frame then
+        frame._scrolledUp = false
+        if frame.scrollToBottomBtn then frame.scrollToBottomBtn:Hide() end
+    end
     UI:RefreshChatMessages(channelId)
+    UI:RefreshChatMembersPanel(channelId)
 end
 
 -- ── Message display ───────────────────────────────────────────────────────
@@ -409,7 +552,7 @@ function UI:RefreshChatMessages(channelId)
             line:SetHeight(1)
             line:SetColorTexture(0.5, 0.5, 0.6, 0.4)
 
-            local gapText = gapRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local gapText = S:FS(gapRow, "OVERLAY")
             gapText:SetPoint("CENTER", gapRow, "CENTER", 0, 0)
             gapText:SetText("History gap — some messages may be missing while you were offline")
             gapText:SetTextColor(0.7, 0.7, 0.8, 1)
@@ -417,13 +560,17 @@ function UI:RefreshChatMessages(channelId)
             yOff = yOff + 26
         end
 
-        local shortSender = msg.sender:match("^([^%-]+)") or msg.sender
-        local isSelf      = (shortSender == myName)
+        local shortSender  = msg.sender:match("^([^%-]+)") or msg.sender
+        local isSelf       = (shortSender == myName)
+        local isCrossGuild = (msg.sourceLabel ~= nil)
 
         local nr, ng, nb
         local memberInfo = GH.GuildData:FindMember(msg.sender)
         if memberInfo then
             nr, ng, nb = GH.GuildData:GetClassColor(memberInfo.classFileName)
+        elseif isCrossGuild then
+            -- Distinct teal for confederation members from other guilds.
+            nr, ng, nb = 0.35, 0.85, 0.75
         elseif isOfficer then
             nr, ng, nb = 0.85, 0.40, 1.00
         elseif isGuild then
@@ -447,7 +594,7 @@ function UI:RefreshChatMessages(channelId)
             stripe:SetColorTexture(1, 1, 1, 0.025)
         end
 
-        local timeFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local timeFs = S:FS(row, "OVERLAY")
         timeFs:SetPoint("LEFT", row, "LEFT", 0, 0)
         timeFs:SetText("|cff555566[" .. GH:FormatTime(msg.ts) .. "]|r ")
         timeFs:SetTextColor(1, 1, 1)
@@ -457,10 +604,14 @@ function UI:RefreshChatMessages(channelId)
         senderBtn:SetPoint("LEFT", row, "LEFT", timeW, 0)
         senderBtn:SetHeight(14)
 
-        local senderFs = senderBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local senderFs = S:FS(senderBtn, "OVERLAY")
         senderFs:SetAllPoints()
         senderFs:SetJustifyH("LEFT")
-        senderFs:SetText(shortSender .. ":")
+        local senderLabel = shortSender
+        if isCrossGuild then
+            senderLabel = "|cff338866[" .. msg.sourceLabel .. "]|r " .. shortSender
+        end
+        senderFs:SetText(senderLabel .. ":")
         senderFs:SetTextColor(nr, ng, nb)
 
         local senderW = senderFs:GetStringWidth() + 6
@@ -489,7 +640,7 @@ function UI:RefreshChatMessages(channelId)
         local bodyIndent = timeW + senderW + 4
         local bodyW = math.max(1, content:GetWidth() - bodyIndent - 12)
 
-        local bodyFs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local bodyFs = S:FS(row, "OVERLAY")
         bodyFs:SetPoint("LEFT", row, "LEFT", bodyIndent, 0)
         bodyFs:SetWidth(bodyW)
         bodyFs:SetJustifyH("LEFT")
@@ -536,7 +687,7 @@ function UI:RefreshChatMessages(channelId)
     content:SetHeight(math.max(yOff + 4, 10))
 
     C_Timer.After(0.05, function()
-        if frame.msgScrollFrame then
+        if frame.msgScrollFrame and not frame._scrolledUp then
             frame.msgScrollFrame:SetVerticalScroll(
                 frame.msgScrollFrame:GetVerticalScrollRange())
         end
@@ -558,7 +709,7 @@ function UI:ShowCopyDialog(text)
         S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.98)
         S:Border(dlg)
 
-        local title = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        local title = S:FS(dlg, "OVERLAY", "large")
         title:SetPoint("TOP", dlg, "TOP", 0, -14)
         title:SetText("Copy Message")
         title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
@@ -580,6 +731,137 @@ function UI:ShowCopyDialog(text)
     dlg:Show()
 end
 
+-- ── Chat members panel ────────────────────────────────────────────────────
+
+function UI:RefreshChatMembersPanel(channelId)
+    local frame = UI.ChatTab
+    if not frame or not frame.chatMembersPanel then return end
+
+    local sc       = frame.chatMembersContent
+    local rows     = frame.chatMemberRows
+    local countFS  = frame.chatMembersCountFS
+
+    local members = {}
+    local title   = "Members"
+
+    if channelId == GuildId() then
+        title = "Online"
+        for _, m in ipairs(GH.GuildData:GetMembers("")) do
+            if m.online then
+                members[#members + 1] = { name = m.name, info = m, online = true }
+            end
+        end
+        table.sort(members, function(a, b)
+            local as, bs = a.info.status or 0, b.info.status or 0
+            if as ~= bs then return as < bs end
+            return a.name < b.name
+        end)
+        countFS:SetText("Online — |cff22cc44" .. #members .. "|r")
+
+    elseif channelId == OfficerId() then
+        title = "Officers"
+        local threshold = GH.DB:GetSetting("officerRankThreshold") or 1
+        for _, m in ipairs(GH.GuildData:GetMembers("")) do
+            if (m.rankIndex or 999) <= threshold then
+                members[#members + 1] = { name = m.name, info = m, online = m.online }
+            end
+        end
+        table.sort(members, function(a, b)
+            if a.online ~= b.online then return (a.online and 1 or 0) > (b.online and 1 or 0) end
+            return a.name < b.name
+        end)
+        local on = 0
+        for _, m in ipairs(members) do if m.online then on = on + 1 end end
+        countFS:SetText(title .. " — |cff22cc44" .. on .. "|r/" .. #members)
+
+    else
+        -- Team channel or custom channel
+        local teamGroup
+        for _, g in ipairs(GH.Groups:GetAll()) do
+            if g.channelId == channelId then teamGroup = g; break end
+        end
+
+        if teamGroup then
+            title = teamGroup.name
+            for _, name in ipairs(teamGroup.members or {}) do
+                local info = GH.GuildData.byName[name]
+                members[#members + 1] = { name = name, info = info, online = info and info.online }
+            end
+        else
+            local ch = GH.Chat:GetChannel(channelId)
+            if ch then
+                title = ch.name
+                for _, name in ipairs(ch.members or {}) do
+                    local info = GH.GuildData.byName[name]
+                    members[#members + 1] = { name = name, info = info, online = info and info.online }
+                end
+            end
+        end
+
+        table.sort(members, function(a, b)
+            if a.online ~= b.online then return (a.online and 1 or 0) > (b.online and 1 or 0) end
+            return a.name < b.name
+        end)
+        local on = 0
+        for _, m in ipairs(members) do if m.online then on = on + 1 end end
+        countFS:SetText(title .. " — |cff22cc44" .. on .. "|r/" .. #members)
+    end
+
+    local ROW_H = 28
+    for _, row in ipairs(rows) do row:Hide() end
+
+    for i, m in ipairs(members) do
+        local row = rows[i]
+        if not row then
+            row = CreateFrame("Frame", nil, sc)
+            row:SetHeight(ROW_H)
+
+            local dot = row:CreateTexture(nil, "OVERLAY")
+            dot:SetSize(7, 7)
+            dot:SetPoint("LEFT", row, "LEFT", 8, 0)
+            row.dot = dot
+
+            local nameFS = S:FS(row, "OVERLAY")
+            nameFS:SetPoint("LEFT",  row, "LEFT",  20, 0)
+            nameFS:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            nameFS:SetJustifyH("LEFT")
+            row.nameFS = nameFS
+
+            rows[i] = row
+        end
+
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT",  sc, "TOPLEFT",  0, -(i - 1) * ROW_H)
+        row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -(i - 1) * ROW_H)
+
+        local cr, cg, cb = 0.7, 0.7, 0.7
+        if m.info then cr, cg, cb = GH.GuildData:GetClassColor(m.info.classFileName) end
+
+        if m.online then
+            local status = m.info and (m.info.status or 0) or 0
+            if     status == 1 then row.dot:SetColorTexture(S.COLOR.AFK[1],    S.COLOR.AFK[2],    S.COLOR.AFK[3],    1)
+            elseif status == 2 then row.dot:SetColorTexture(S.COLOR.DND[1],    S.COLOR.DND[2],    S.COLOR.DND[3],    1)
+            else                    row.dot:SetColorTexture(S.COLOR.ONLINE[1], S.COLOR.ONLINE[2], S.COLOR.ONLINE[3], 1)
+            end
+        else
+            cr, cg, cb = cr * 0.55, cg * 0.55, cb * 0.55
+            row.dot:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 0.5)
+        end
+
+        row.nameFS:SetText(m.name)
+        row.nameFS:SetTextColor(cr, cg, cb)
+        row:Show()
+    end
+
+    sc:SetHeight(math.max(#members * ROW_H, 10))
+end
+
+function UI:RefreshCurrentChatMembersPanel()
+    if activeChatId then
+        UI:RefreshChatMembersPanel(activeChatId)
+    end
+end
+
 -- ── Real-time callbacks ───────────────────────────────────────────────────
 
 function UI:OnChatMessage(channelId)
@@ -590,6 +872,7 @@ function UI:OnChatMessage(channelId)
 end
 
 function UI:OnChannelListChanged()
+    tabScrollX = 0
     if UI.ChatTab and UI.ChatTab:IsShown() then
         UI:RefreshChatChannelList()
     end
@@ -607,7 +890,7 @@ function UI:ShowChatMembersDialog(channelId)
     dlg:SetFrameStrata("DIALOG")
     S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
 
-    local title = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = S:FS(dlg, "OVERLAY", "normal")
     title:SetPoint("TOP", dlg, "TOP", 0, -12)
     title:SetText("Members of #" .. ch.name)
     title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
@@ -630,7 +913,7 @@ function UI:ShowChatMembersDialog(channelId)
             row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -(i-1)*28)
             row:SetHeight(26)
             row:Show()
-            local nm = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local nm = S:FS(row, "OVERLAY")
             nm:SetPoint("LEFT", row, "LEFT", 6, 0)
             nm:SetText(memberName)
             nm:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
@@ -693,7 +976,7 @@ function UI:ShowChatMembersDialog(channelId)
                 if not row then
                     row = CreateFrame("Button", nil, suggestionContent)
                     row:SetHeight(24)
-                    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    row.text = S:FS(row, "OVERLAY")
                     row.text:SetPoint("LEFT", row, "LEFT", 6, 0)
                     row.text:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
                     row.bg = row:CreateTexture(nil, "BACKGROUND")

@@ -11,8 +11,13 @@ GH.UI = GH.UI or {}
 GH.GuildData = GH.GuildData or {}
 GH.Groups = GH.Groups or {}
 GH.Chat = GH.Chat or {}
+GH.BNetChat = GH.BNetChat or {}
 GH.Events = GH.Events or {}
 GH.Recruit = GH.Recruit or {}
+GH.GuildRecruit = GH.GuildRecruit or {}
+GH.Profiles = GH.Profiles or {}
+GH.ProfileSync = GH.ProfileSync or {}
+GH.ActivityLog = GH.ActivityLog or {}
 
 function GH:Initialize()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -23,8 +28,13 @@ function GH:Initialize()
     self.GuildData:Initialize()
     self.Groups:Initialize()
     self.Chat:Initialize()
+    self.BNetChat:Initialize()
     self.Events:Initialize()
     self.Recruit:Initialize()
+    self.GuildRecruit:Initialize()
+    self.Profiles:Initialize()
+    self.ActivityLog:Initialize()
+    self.ProfileSync:Initialize()
     self.UI:Initialize()
 
     print("|cff7289daGuildHub|r loaded! Type |cffffd700/gh|r to open.")

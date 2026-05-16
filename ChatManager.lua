@@ -44,11 +44,6 @@ local function AppendRing(buf, entry, max)
     if #buf > limit then table.remove(buf, 1) end
 end
 
-local function HasAnyLinks()
-    for _ in pairs(GH.DB:GetCommunityLinks()) do return true end
-    return false
-end
-
 local function NotifyGuildMsg(entry)
     local channelId = entry.isOfficer and OFFICER_ID or GUILD_ID
     local buf       = entry.isOfficer and Chat.officerMsgs or Chat.guildMsgs
@@ -56,11 +51,6 @@ local function NotifyGuildMsg(entry)
     Chat.unread[channelId] = (Chat.unread[channelId] or 0) + 1
     if GH.UI and GH.UI.UpdateChatBadge then GH.UI:UpdateChatBadge() end
     if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(channelId) end
-    -- Guild messages also appear in the cross-guild view when any links are configured.
-    if not entry.isOfficer and HasAnyLinks() then
-        Chat.unread[XGUILD_ID] = (Chat.unread[XGUILD_ID] or 0) + 1
-        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
-    end
 end
 
 -- ── Initialization ────────────────────────────────────────────────────────
@@ -208,6 +198,7 @@ function Chat:_OnClubMessageAdded(clubId, streamId, messageId)
         local body   = msg.content and msg.content.body
         local sender = msg.author  and msg.author.name
         if not body or body == "" or not sender then return end
+        if Ambiguate then sender = Ambiguate(sender, "none") end
 
         local ts = messageId and math.floor(messageId.epoch / 1000000) or GH:GetTimestamp()
 
@@ -282,9 +273,10 @@ function Chat:_OnCommunityMessageAdded(clubId, streamId, messageId, li)
     GH:Debug("Chat", "_OnCommunityMessageAdded: [%s] %s: %s", li.label, sender, body)
     AppendRing(Chat.communityMsgs, entry, MAX_COMMUNITY_RING)
     GH.DB:AddCommunityMessage(entry)
-    Chat.unread[XGUILD_ID] = (Chat.unread[XGUILD_ID] or 0) + 1
+    -- Cross-guild messages surface in the main Guild Chat tab.
+    Chat.unread[GUILD_ID] = (Chat.unread[GUILD_ID] or 0) + 1
     if GH.UI and GH.UI.UpdateChatBadge then GH.UI:UpdateChatBadge() end
-    if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(XGUILD_ID) end
+    if GH.UI and GH.UI.OnChatMessage   then GH.UI:OnChatMessage(GUILD_ID) end
 end
 
 -- ── Club discovery ────────────────────────────────────────────────────────
@@ -376,6 +368,7 @@ function Chat:_LoadFromClubCache(clubId, streamId)
         local body   = msg.content and msg.content.body
         local sender = msg.author  and msg.author.name
         if body and body ~= "" and sender then
+            if Ambiguate then sender = Ambiguate(sender, "none") end
             local ts  = msg.messageId and math.floor(msg.messageId.epoch / 1000000) or 0
             local key = sender .. "\1" .. body .. "\1" .. tostring(ts)
             if not seen[key] then
@@ -394,7 +387,11 @@ function Chat:_LoadFromClubCache(clubId, streamId)
     end
 
     GH:Debug("Chat", "_LoadFromClubCache: added %d msgs", #newEntries)
-    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+    -- Defer so this fires after the current call stack (SelectChatChannel /
+    -- LoadGuildHistory) has fully unwound, preventing re-entrant UI refreshes.
+    C_Timer.After(0, function()
+        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+    end)
 end
 
 function Chat:_LoadSavedGuildHistory()
@@ -418,7 +415,7 @@ end
 function Chat:FindLinkedCommunities()
     Chat._linkedClubs = {}
     local links = GH.DB:GetCommunityLinks()
-    if not HasAnyLinks() then return end
+    if not next(links) then return end
 
     local C_Club = rawget(_G, "C_Club")
     if not (C_Club and C_Club.GetSubscribedClubs) then return end
@@ -503,7 +500,9 @@ function Chat:_LoadCommunityHistory(clubId, streamId, li)
     table.sort(Chat.communityMsgs, function(a, b) return a.ts < b.ts end)
 
     GH:Debug("Chat", "_LoadCommunityHistory [%s]: added %d msgs", li.label, #newEntries)
-    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
+    C_Timer.After(0, function()
+        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+    end)
 end
 
 function Chat:LoadXGuildHistory()
@@ -511,7 +510,9 @@ function Chat:LoadXGuildHistory()
     for cid, li in pairs(Chat._linkedClubs) do
         Chat:_LoadCommunityHistory(cid, li.streamId, li)
     end
-    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
+    C_Timer.After(0, function()
+        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+    end)
 end
 
 -- ── History ───────────────────────────────────────────────────────────────
@@ -519,7 +520,9 @@ end
 -- Called when the Guild Chat tab is opened or when history needs refreshing.
 function Chat:LoadGuildHistory()
     Chat:_LoadSavedGuildHistory()
-    if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
+    -- Do not call OnChatMessage here; SelectChatChannel calls RefreshChatMessages
+    -- directly after this returns, so a synchronous callback here creates a
+    -- re-entrant call into RefreshChatMessages before SelectChatChannel unwinds.
     if Chat.guildClubId and Chat.guildStreamId then
         Chat:_LoadFromClubCache(Chat.guildClubId, Chat.guildStreamId)
         Chat:_RequestMoreGuildHistory()
@@ -551,6 +554,7 @@ function Chat:LoadOfficerHistory()
         local body   = msg.content and msg.content.body
         local sender = msg.author  and msg.author.name
         if body and body ~= "" and sender then
+            if Ambiguate then sender = Ambiguate(sender, "none") end
             local ts  = msg.messageId and math.floor(msg.messageId.epoch / 1000000) or 0
             local key = sender .. "\1" .. body .. "\1" .. tostring(ts)
             if not seen[key] then
@@ -576,13 +580,6 @@ function Chat:GetChannels()
     out[#out + 1] = { id = GUILD_ID, name = "Guild Chat", isGuild = true }
     if GH:IsOfficer() then
         out[#out + 1] = { id = OFFICER_ID, name = "Officer", isOfficer = true }
-    end
-    if HasAnyLinks() then
-        out[#out + 1] = {
-            id       = XGUILD_ID,
-            name     = GH.DB:GetCrossGuildLabel(),
-            isXGuild = true,
-        }
     end
     local custom = {}
     for id, ch in pairs(GH.DB:GetChats()) do
@@ -655,7 +652,7 @@ function Chat:SendMessage(channelId, text)
                         }
                         AppendRing(Chat.communityMsgs, entry, MAX_COMMUNITY_RING)
                         GH.DB:AddCommunityMessage(entry)
-                        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(XGUILD_ID) end
+                        if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(GUILD_ID) end
                         return
                     end
                 end
@@ -706,11 +703,11 @@ function Chat:SendMessage(channelId, text)
 end
 
 function Chat:GetMessages(channelId)
-    if channelId == GUILD_ID   then return Chat.guildMsgs   end
-    if channelId == OFFICER_ID then return Chat.officerMsgs end
-    if channelId == XGUILD_ID  then
-        -- Linear merge of two independently-sorted arrays: O(n).
+    if channelId == GUILD_ID then
+        -- Merge own guild messages with cross-guild community/BNet messages so
+        -- all confederation chat flows into a single timeline.
         local gm, cm = Chat.guildMsgs, Chat.communityMsgs
+        if #cm == 0 then return gm end
         local result = {}
         local gi, ci = 1, 1
         while gi <= #gm or ci <= #cm do
@@ -722,12 +719,13 @@ function Chat:GetMessages(channelId)
         end
         return result
     end
+    if channelId == OFFICER_ID then return Chat.officerMsgs end
     local ch = GH.DB:GetChat(channelId)
     return ch and ch.messages or {}
 end
 
 function Chat:IsMember(channelId, playerName)
-    if channelId == GUILD_ID or channelId == OFFICER_ID or channelId == XGUILD_ID then return true end
+    if channelId == GUILD_ID or channelId == OFFICER_ID then return true end
     -- Officers can see all custom channels (team chats and group channels).
     if playerName == GH:GetPlayerName() and GH:IsOfficer() then return true end
     local ch = GH.DB:GetChat(channelId)

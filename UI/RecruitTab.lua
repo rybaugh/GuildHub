@@ -28,12 +28,11 @@ local function RoleColor(role)
     return 0.6, 0.6, 0.7
 end
 
-local function TimeAgo(ts)
-    local diff = (GH:GetTimestamp() or time()) - (ts or 0)
-    if diff < 60    then return "just now" end
-    if diff < 3600  then return math.floor(diff / 60) .. "m ago" end
-    if diff < 86400 then return math.floor(diff / 3600) .. "h ago" end
-    return math.floor(diff / 86400) .. "d ago"
+local function TimeRemaining(ts)
+    local expireAt  = (ts or 0) + (GH.Recruit.EXPIRE_SECS or 1800)
+    local remaining = expireAt - (GH:GetTimestamp() or time())
+    if remaining <= 60  then return "|cffff4444<1m left|r" end
+    return math.ceil(remaining / 60) .. "m left"
 end
 
 -- Compact open-slots string, e.g. "1T 1H 3D" or "Full"
@@ -123,14 +122,14 @@ local function MakeRoleCard(parent, role, x, y, default, minV, maxV)
     topBar:SetColorTexture(r, g, b, 0.90)
 
     -- Role name
-    local nameFS = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local nameFS = S:FS(card, "OVERLAY")
     nameFS:SetPoint("TOP", card, "TOP", 0, -6)
     nameFS:SetText(ROLE_SHORT[role] or role:upper())
     nameFS:SetTextColor(r, g, b, 0.90)
 
     -- Count
     local state = { val = tonumber(default) or 0, minV = minV or 0, maxV = maxV or 25 }
-    local countFS = card:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local countFS = S:FS(card, "OVERLAY", "large")
     countFS:SetPoint("CENTER", card, "CENTER", 0, 6)
 
     local function Upd()
@@ -157,7 +156,7 @@ local function MakeRoleCard(parent, role, x, y, default, minV, maxV)
         local sbg = btn:CreateTexture(nil, "BACKGROUND")
         sbg:SetAllPoints()
         sbg:SetColorTexture(0.13, 0.13, 0.20, 0.90)
-        local sfs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local sfs = S:FS(btn, "OVERLAY", "normal")
         sfs:SetAllPoints(); sfs:SetText(isPlus and "+" or "−")
         sfs:SetTextColor(0.55, 0.60, 0.80)
         btn:SetScript("OnEnter", function()
@@ -197,14 +196,14 @@ local function MakePicker(parent, x, y, w, placeholder, getItemsFn)
     bborder:SetAllPoints()
     bborder:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.55)
 
-    local labelFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local labelFS = S:FS(btn, "OVERLAY")
     labelFS:SetPoint("LEFT", btn, "LEFT", 8, 0)
     labelFS:SetPoint("RIGHT", btn, "RIGHT", -22, 0)
     labelFS:SetJustifyH("LEFT")
     labelFS:SetText(placeholder)
     labelFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
-    local arrowFS = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local arrowFS = S:FS(btn, "OVERLAY", "normal")
     arrowFS:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
     arrowFS:SetText("▾")
     arrowFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -245,7 +244,7 @@ local function MakePicker(parent, x, y, w, placeholder, getItemsFn)
             row:SetSize(w - 2, ROW_H); row:Show()
             local rbg = row:CreateTexture(nil, "BACKGROUND")
             rbg:SetAllPoints(); rbg:SetColorTexture(0, 0, 0, 0)
-            local rfs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local rfs = S:FS(row, "OVERLAY")
             rfs:SetPoint("LEFT", row, "LEFT", 8, 0)
             rfs:SetText(item)
             rfs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
@@ -370,7 +369,7 @@ local function ShowSignupPopup(postId, post, anchor)
         S:Bg(_popup, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
         local acc = _popup:CreateTexture(nil, "ARTWORK")
         acc:SetPoint("TOPLEFT"); acc:SetPoint("TOPRIGHT"); acc:SetHeight(2)
-        acc:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 1)
+        acc:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.80)
         tinsert(UISpecialFrames, "GHLFMSignupPopup")
     end
 
@@ -380,7 +379,7 @@ local function ShowSignupPopup(postId, post, anchor)
         c:Hide()
     end
 
-    local title = _popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local title = S:FS(_popup, "OVERLAY")
     title:SetPoint("TOP", _popup, "TOP", 0, -8)
     title:SetText("Sign up as:")
     title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
@@ -447,7 +446,7 @@ local function ShowApplicantsPanel(post)
         S:Bg(_appPanel, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
         local acc = _appPanel:CreateTexture(nil, "ARTWORK")
         acc:SetPoint("TOPLEFT"); acc:SetPoint("TOPRIGHT"); acc:SetHeight(2)
-        acc:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 1)
+        acc:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.80)
         local closeBtn = S:DangerButton(_appPanel, "✕ Close", 72, 22)
         closeBtn:SetPoint("BOTTOMRIGHT", _appPanel, "BOTTOMRIGHT", -8, 8)
         closeBtn:SetScript("OnClick", function() _appPanel:Hide() end)
@@ -460,7 +459,7 @@ local function ShowApplicantsPanel(post)
         if child ~= _appPanel._closeBtn then child:Hide() end
     end
 
-    local title = _appPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = S:FS(_appPanel, "OVERLAY", "normal")
     title:SetPoint("TOP", _appPanel, "TOP", 0, -10)
     local titleStr = (post.instanceName or post.activityType) .. " — Signups"
     title:SetText(titleStr)
@@ -470,7 +469,7 @@ local function ShowApplicantsPanel(post)
     local ROW_H   = 28
 
     if #signups == 0 then
-        local empty = _appPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local empty = S:FS(_appPanel, "OVERLAY", "normal")
         empty:SetPoint("CENTER", _appPanel, "CENTER", 0, 6)
         empty:SetText("No signups yet.")
         empty:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -487,17 +486,18 @@ local function ShowApplicantsPanel(post)
             end
             local r, g, b = RoleColor(signup.role or "Any")
             local roleTag = signup.role and CC("[" .. signup.role .. "]", r, g, b) or ""
-            local nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local nameFS = S:FS(row, "OVERLAY")
             nameFS:SetPoint("LEFT", row, "LEFT", 6, 0)
             nameFS:SetText(roleTag .. "  " .. (signup.name or "?"))
             nameFS:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
-            local ageFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local ageFS = S:FS(row, "OVERLAY")
             ageFS:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-            ageFS:SetText(TimeAgo(signup.ts or 0))
+            ageFS:SetText(TimeRemaining(signup.ts or 0))
             ageFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
         end
     end
 
+    _appPanel._currentPostId = post.id
     _appPanel:SetSize(280, 42 + math.max(1, #signups) * ROW_H + 10)
     _appPanel:ClearAllPoints()
     _appPanel:SetPoint("CENTER", UIParent, "CENTER")
@@ -505,11 +505,23 @@ local function ShowApplicantsPanel(post)
     _appPanel:Raise()
 end
 
+local function RefreshApplicantsPanelIfOpen()
+    if not (_appPanel and _appPanel:IsShown() and _appPanel._currentPostId) then return end
+    local postId = _appPanel._currentPostId
+    for _, p in ipairs(GH.Recruit:GetAll()) do
+        if p.id == postId then
+            ShowApplicantsPanel(p)
+            return
+        end
+    end
+    _appPanel:Hide()
+end
+
 -- ──────────────────────────────────────────────────────────
 -- Build the LFM tab
 -- ──────────────────────────────────────────────────────────
 
-function UI:CreateLFMTab(parent, w)
+function UI:CreateLFMTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints(parent)
     frame:Hide()
@@ -527,28 +539,39 @@ function UI:CreateLFMTab(parent, w)
     pp:SetPoint("TOPLEFT",  frame, "TOPLEFT",  PAD, -PAD)
     pp:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD)
     pp:SetHeight(192)
-    S:Bg(pp, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 1)
+    S:GradientBg(pp, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL[1],       S.COLOR.PANEL[2],       S.COLOR.PANEL[3],       1)
 
+    -- Top accent stripe: gold gradient
     local accent = pp:CreateTexture(nil, "ARTWORK")
     accent:SetPoint("TOPLEFT"); accent:SetPoint("TOPRIGHT"); accent:SetHeight(2)
-    accent:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 1)
+    local _ppAccOk = pcall(function()
+        accent:SetGradient("HORIZONTAL",
+            CreateColor(S.COLOR.GOLD[1] * 0.5, S.COLOR.GOLD[2] * 0.5, S.COLOR.GOLD[3] * 0.3, 0.6),
+            CreateColor(S.COLOR.GOLD[1],        S.COLOR.GOLD[2],        S.COLOR.GOLD[3],        0.9))
+    end)
+    if not _ppAccOk then
+        accent:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.7)
+    end
 
     S:Header(pp, "POST A GROUP"):SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -10)
 
     -- Row 1: activity type toggles
-    local actLbl = pp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local actLbl = S:FS(pp, "OVERLAY")
     actLbl:SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -32)
     actLbl:SetText("Activity:")
     actLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
     -- Row 2: note / description field
-    local descLbl = pp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local descLbl = S:FS(pp, "OVERLAY")
     descLbl:SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -60)
     descLbl:SetText("Title:")
     descLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
-    local descBox = S:EditBox(pp, w - 80, 22, 80)
-    descBox:SetPoint("TOPLEFT", pp, "TOPLEFT", 52, -64)
+    local descBox = S:EditBox(pp, 0, 22, 80)
+    descBox:SetPoint("TOPLEFT",  pp, "TOPLEFT",  52, -64)
+    descBox:SetPoint("TOPRIGHT", pp, "TOPRIGHT", -10, -64)
     frame._descBox = descBox
 
     -- Row 3: role section (instance picker + role cards)
@@ -686,7 +709,7 @@ function UI:CreateLFMTab(parent, w)
     guildChatChk:SetChecked(true)
     frame._guildChatChk = guildChatChk
 
-    local guildChatLbl = pp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local guildChatLbl = S:FS(pp, "OVERLAY")
     guildChatLbl:SetPoint("LEFT", guildChatChk, "RIGHT", 2, 0)
     guildChatLbl:SetText("Post to guild chat")
     guildChatLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -754,12 +777,14 @@ function UI:CreateLFMTab(parent, w)
     local lp = CreateFrame("Frame", nil, frame)
     lp:SetPoint("TOPLEFT",    pp,    "BOTTOMLEFT",  0,    -8)
     lp:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD,  34)
-    S:Bg(lp, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 0.45)
+    S:GradientBg(lp, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 0.70,
+        S.COLOR.PANEL[1],       S.COLOR.PANEL[2],       S.COLOR.PANEL[3],       0.35)
 
     S:Header(lp, "ACTIVE GROUPS"):SetPoint("TOPLEFT", lp, "TOPLEFT", 10, -10)
 
     -- Filter buttons
-    local fLbl = lp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local fLbl = S:FS(lp, "OVERLAY")
     fLbl:SetPoint("TOPLEFT", lp, "TOPLEFT", 120, -8)
     fLbl:SetText("Filter:")
     fLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -796,7 +821,7 @@ function UI:CreateLFMTab(parent, w)
     end
     RefreshFilterBtns()
 
-    local reBroadcastBtn = S:Button(lp, "↺ Refresh", 82, 18)
+    local reBroadcastBtn = S:Button(lp, "|TInterface/Buttons/UI-RefreshButton:13:13:0:0|t Refresh", 96, 18)
     reBroadcastBtn:SetPoint("TOPRIGHT", lp, "TOPRIGHT", -8, -4)
     reBroadcastBtn:SetScript("OnClick", function()
         GH.Recruit:BroadcastAll()
@@ -806,7 +831,7 @@ function UI:CreateLFMTab(parent, w)
     -- Column headers (lp-relative; scroll frame is at lp x=4)
     local HDR_Y = -28
     local function ColHdr(text, x, cw, just)
-        local fs = lp:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local fs = S:FS(lp, "OVERLAY")
         fs:SetPoint("TOPLEFT", lp, "TOPLEFT", x, HDR_Y)
         fs:SetWidth(cw)
         fs:SetJustifyH(just or "LEFT")
@@ -817,7 +842,7 @@ function UI:CreateLFMTab(parent, w)
     ColHdr("Posted By",        98, 112)
     ColHdr("Instance / Note", 214, 218)
     ColHdr("Slots",           436,  76, "CENTER")
-    ColHdr("Posted",          516,  58, "CENTER")
+    ColHdr("Expires",         516,  58, "CENTER")
 
     -- Scroll frame (no template: avoids the broken square arrow buttons in WoW 12.x;
     -- mouse wheel scrolling is used instead).
@@ -840,7 +865,7 @@ function UI:CreateLFMTab(parent, w)
     local emptyHolder = CreateFrame("Frame", nil, listContent)
     emptyHolder:SetPoint("TOP", listContent, "TOP", 0, -20)
     emptyHolder:SetSize(400, 24)
-    local emptyFS = emptyHolder:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local emptyFS = S:FS(emptyHolder, "OVERLAY", "normal")
     emptyFS:SetAllPoints(emptyHolder)
     emptyFS:SetJustifyH("CENTER")
     emptyFS:SetText("No active groups. Post one above!")
@@ -853,7 +878,7 @@ function UI:CreateLFMTab(parent, w)
     lbBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, 7)
     lbBtn:SetScript("OnClick", function() UI:ShowLeaderboardPanel() end)
 
-    local footer = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local footer = S:FS(frame, "OVERLAY")
     footer:SetPoint("BOTTOMLEFT",  frame, "BOTTOMLEFT",  PAD + 4, 12)
     footer:SetPoint("BOTTOMRIGHT", lbBtn, "BOTTOMLEFT",  -8,       0)
     footer:SetJustifyH("LEFT")
@@ -869,6 +894,20 @@ function UI:CreateLFMTab(parent, w)
         local f = UI.LFMTab
         if f and f._selType == "Dungeon" and f._UpdateRoleSection then
             AutoFillDungeonSpinners(f)
+        end
+    end)
+
+    -- Auto-refresh the listing every 30 seconds while the LFM tab is visible.
+    local _autoRefreshElapsed = 0
+    local autoRefreshFrame = CreateFrame("Frame")
+    autoRefreshFrame:SetScript("OnUpdate", function(_, elapsed)
+        if not (UI.LFMTab and UI.LFMTab:IsShown()) then return end
+        _autoRefreshElapsed = _autoRefreshElapsed + elapsed
+        if _autoRefreshElapsed >= 30 then
+            _autoRefreshElapsed = 0
+            GH.Recruit:CleanupExpired()
+            UI:RefreshLFMList()
+            RefreshApplicantsPanelIfOpen()
         end
     end)
 
@@ -920,8 +959,9 @@ function UI:RefreshLFMList()
         row:SetHeight(ROW_H)
         row:Show()
 
-        S:Bg(row, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3],
-            i % 2 == 0 and 0.60 or 0)
+        if i % 2 == 0 then
+            S:Bg(row, S.COLOR.PANEL_ALT[1], S.COLOR.PANEL_ALT[2], S.COLOR.PANEL_ALT[3], 0.55)
+        end
 
         -- Activity colour bar
         local r, g, b = ActColor(post.activityType)
@@ -932,13 +972,13 @@ function UI:RefreshLFMList()
 
         -- Column positions must leave room for the 64px action widget at x=572.
         -- Activity type
-        local typeFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local typeFS = S:FS(row, "OVERLAY")
         typeFS:SetPoint("LEFT", row, "LEFT", 10, 0)
         typeFS:SetWidth(80)
         typeFS:SetText(CC(post.activityType, r, g, b))
 
         -- Poster
-        local posterFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local posterFS = S:FS(row, "OVERLAY")
         posterFS:SetPoint("LEFT", row, "LEFT", 94, 0)
         posterFS:SetWidth(112)
         local pName = post.author
@@ -949,7 +989,7 @@ function UI:RefreshLFMList()
         posterFS:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
 
         -- Description: instance name (gold) + optional note
-        local descFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local descFS = S:FS(row, "OVERLAY")
         descFS:SetPoint("LEFT", row, "LEFT", 210, 0)
         descFS:SetWidth(218)
         if post.instanceName and post.instanceName ~= "" then
@@ -965,7 +1005,7 @@ function UI:RefreshLFMList()
 
         -- Slots summary
         local summary = SlotSummary(post)
-        local slotFS  = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local slotFS  = S:FS(row, "OVERLAY")
         slotFS:SetPoint("LEFT", row, "LEFT", 432, 0)
         slotFS:SetWidth(76)
         slotFS:SetJustifyH("CENTER")
@@ -976,11 +1016,11 @@ function UI:RefreshLFMList()
         end
 
         -- Age
-        local ageFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local ageFS = S:FS(row, "OVERLAY")
         ageFS:SetPoint("LEFT", row, "LEFT", 512, 0)
         ageFS:SetWidth(58)
         ageFS:SetJustifyH("CENTER")
-        ageFS:SetText(TimeAgo(post.ts))
+        ageFS:SetText(TimeRemaining(post.ts))
         ageFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
         -- Action widget — anchored to RIGHT so it sits just inside the content edge.
@@ -1009,7 +1049,7 @@ function UI:RefreshLFMList()
                 UI:RefreshLFMList()
             end)
         elseif GH.Recruit:HasSignedUp(post) then
-            local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local fs = S:FS(row, "OVERLAY")
             fs:SetPoint("RIGHT", row, "RIGHT", -8, 0)
             fs:SetWidth(66)
             fs:SetJustifyH("CENTER")
@@ -1022,7 +1062,7 @@ function UI:RefreshLFMList()
                 ShowSignupPopup(pid, captPost, sig)
             end)
         else
-            local fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local fs = S:FS(row, "OVERLAY")
             fs:SetPoint("RIGHT", row, "RIGHT", -8, 0)
             fs:SetWidth(66)
             fs:SetJustifyH("CENTER")
@@ -1061,6 +1101,7 @@ function UI:OnLFMUpdated()
         local f = UI.LFMTab
         if f and f._selType == "Dungeon" then AutoFillDungeonSpinners(f) end
         self:RefreshLFMList()
+        RefreshApplicantsPanelIfOpen()
     end
 end
 
@@ -1086,14 +1127,14 @@ function UI:ShowLeaderboardPanel()
         -- Gold top accent
         local acc = _lbPanel:CreateTexture(nil, "ARTWORK")
         acc:SetPoint("TOPLEFT"); acc:SetPoint("TOPRIGHT"); acc:SetHeight(2)
-        acc:SetColorTexture(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3], 1)
+        acc:SetColorTexture(S.COLOR.GOLD[1], S.COLOR.GOLD[2], S.COLOR.GOLD[3], 0.90)
 
         -- Title bar (drag handle)
         local titleBar = CreateFrame("Frame", nil, _lbPanel)
         titleBar:SetPoint("TOPLEFT"); titleBar:SetPoint("TOPRIGHT"); titleBar:SetHeight(38)
         S:Bg(titleBar, 0.04, 0.04, 0.08, 1)
 
-        local titleFS = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        local titleFS = S:FS(titleBar, "OVERLAY", "large")
         titleFS:SetPoint("CENTER", titleBar, "CENTER", -14, 0)
         titleFS:SetText("Guild Points Leaderboard")
         titleFS:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
@@ -1105,7 +1146,7 @@ function UI:ShowLeaderboardPanel()
 
         -- Column headers
         local function LbHdr(text, xOff, cw, just)
-            local fs = _lbPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local fs = S:FS(_lbPanel, "OVERLAY")
             fs:SetPoint("TOPLEFT", _lbPanel, "TOPLEFT", xOff, -44)
             fs:SetWidth(cw)
             fs:SetJustifyH(just or "LEFT")
@@ -1141,7 +1182,7 @@ function UI:ShowLeaderboardPanel()
         _lbPanel._content = lbContent
 
         -- Footer
-        local footerFS = _lbPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local footerFS = S:FS(_lbPanel, "OVERLAY")
         footerFS:SetPoint("BOTTOMLEFT",  _lbPanel, "BOTTOMLEFT",  10, 12)
         footerFS:SetPoint("BOTTOMRIGHT", _lbPanel, "BOTTOMRIGHT", -10, 12)
         footerFS:SetJustifyH("CENTER")
@@ -1175,7 +1216,7 @@ function UI:ShowLeaderboardPanel()
         holder:SetPoint("TOP", content, "TOP", 0, -20)
         holder:SetSize(400, 24)
         holder:Show()
-        local fs = holder:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local fs = S:FS(holder, "OVERLAY", "normal")
         fs:SetAllPoints()
         fs:SetJustifyH("CENTER")
         fs:SetText("No guild points earned yet.")
@@ -1224,7 +1265,7 @@ function UI:ShowLeaderboardPanel()
         end
 
         -- Rank
-        local rankFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local rankFS = S:FS(row, "OVERLAY", "normal")
         rankFS:SetPoint("LEFT", row, "LEFT", 8, 0)
         rankFS:SetWidth(32)
         rankFS:SetJustifyH("CENTER")
@@ -1236,7 +1277,7 @@ function UI:ShowLeaderboardPanel()
         end
 
         -- Name
-        local nameFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local nameFS = S:FS(row, "OVERLAY", "normal")
         nameFS:SetPoint("LEFT", row, "LEFT", 46, 0)
         nameFS:SetWidth(172)
         local suffix = entry.name == me and CC(" (You)", S.COLOR.GREEN[1], S.COLOR.GREEN[2], S.COLOR.GREEN[3]) or ""
@@ -1248,7 +1289,7 @@ function UI:ShowLeaderboardPanel()
         end
 
         -- Points
-        local ptsFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local ptsFS = S:FS(row, "OVERLAY", "normal")
         ptsFS:SetPoint("LEFT", row, "LEFT", 226, 0)
         ptsFS:SetWidth(74)
         ptsFS:SetJustifyH("RIGHT")
@@ -1262,7 +1303,7 @@ function UI:ShowLeaderboardPanel()
         -- Class (from local roster cache)
         local member = GH.GuildData and GH.GuildData.byName and GH.GuildData.byName[entry.name]
         if member and member.class then
-            local classFS = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local classFS = S:FS(row, "OVERLAY")
             classFS:SetPoint("LEFT", row, "LEFT", 312, 0)
             classFS:SetWidth(110)
             classFS:SetText(member.class)

@@ -9,6 +9,7 @@ local Recruit = GH.Recruit
 local SEP          = "\30"
 local MSG_POST     = "LP"
 local MSG_SIGNUP   = "LS"
+local MSG_DEL      = "LD"    -- post deleted / group full
 local MSG_PTS_UPD  = "LPU"   -- single-player points total (name, newTotal)
 local MSG_PTS_SYN  = "LPA"   -- batch points sync (name:pts,name:pts,...)
 
@@ -22,6 +23,7 @@ local POINTS_GOT_SIGNUP = 2
 Recruit.ACTIVITY_TYPES    = { "Dungeon", "Raid", "Battleground", "Arena" }
 Recruit.POINTS_SIGNUP     = POINTS_SIGNUP
 Recruit.POINTS_GOT_SIGNUP = POINTS_GOT_SIGNUP
+Recruit.EXPIRE_SECS       = 30 * 60   -- posts expire after 30 minutes
 
 Recruit.ACTIVITY_COLORS = {
     Dungeon      = { 0.42, 0.65, 1.00 },
@@ -159,12 +161,33 @@ end
 -- ──────────────────────────────────────────────────────────
 
 function Recruit:GetAll()
-    local out = {}
+    local out  = {}
+    local now  = GH:GetTimestamp() or time()
     for id, raw in pairs(GH.DB:GetRecruitPosts()) do
-        out[#out + 1] = NormalizePost(id, raw)
+        if now - (raw.ts or 0) <= self.EXPIRE_SECS then
+            out[#out + 1] = NormalizePost(id, raw)
+        end
     end
     table.sort(out, function(a, b) return (a.ts or 0) > (b.ts or 0) end)
     return out
+end
+
+-- Delete posts older than EXPIRE_SECS and broadcast deletions for own posts.
+function Recruit:CleanupExpired()
+    if not GH:IsInGuild() then return end
+    local now = GH:GetTimestamp() or time()
+    local me  = GH:GetPlayerName()
+    for id, raw in pairs(GH.DB:GetRecruitPosts()) do
+        if now - (raw.ts or 0) > self.EXPIRE_SECS then
+            if (raw.author or "") == me then
+                local payload = table.concat({ MSG_DEL, id }, SEP)
+                if #payload <= 250 then
+                    pcall(C_ChatInfo.SendAddonMessage, GH.ADDON_PREFIX, payload, "GUILD")
+                end
+            end
+            GH.DB:DeleteRecruitPost(id)
+        end
+    end
 end
 
 -- Total slots across all roles
@@ -255,13 +278,14 @@ local function AnnounceToGuildChat(data)
     pcall(sendFn, msg, "GUILD")
 end
 
--- Open the Premade Groups "Start a Group" creation form and pre-fill the title.
--- Navigates: PVEFrame → GroupFinderFrame (Premade Groups tab) → EntryCreation panel.
+-- Open the Premade Groups frame so the player can create a listing manually.
+-- We intentionally avoid manipulating internal child frames (CategorySelection,
+-- EntryCreation) because doing so bypasses Blizzard's state machine and corrupts
+-- the frame layout.  The print message guides the player from here.
 local function CreateGroupFinderListing(data)
     local at = data.activityType
     if at ~= "Dungeon" and at ~= "Raid" then return end
 
-    -- Show PVEFrame on the Premade Groups tab.
     local pvef = rawget(_G, "PVEFrame")
     if pvef then
         ShowUIPanel(pvef)
@@ -269,39 +293,8 @@ local function CreateGroupFinderListing(data)
         if showFn then pcall(showFn, "GroupFinderFrame") end
     end
 
-    -- Navigate to the entry-creation form inside LFGListFrame.
-    local lfg = rawget(_G, "LFGListFrame")
-    if not lfg then return end
-
-    local creation = rawget(lfg, "EntryCreation") or rawget(lfg, "entryCreation")
-
-    if creation then
-        -- Hide category selection and show the creation form.
-        local catSel = rawget(lfg, "CategorySelection") or rawget(lfg, "categorySelection")
-        if catSel then pcall(function() catSel:Hide() end) end
-        pcall(function() creation:Show() end)
-
-        -- Pre-fill the listing title with what the player typed.
-        local nameBox = rawget(creation, "name") or rawget(creation, "NameEdit")
-                     or rawget(creation, "nameEdit")
-        if nameBox and nameBox.SetText then
-            pcall(function()
-                nameBox:SetText(data.body or "")
-                if nameBox.SetCursorPosition then
-                    nameBox:SetCursorPosition(#(data.body or ""))
-                end
-            end)
-        end
-    else
-        -- Fallback: click "Start a Group" if the creation panel isn't directly accessible.
-        local catSel   = rawget(lfg, "CategorySelection") or rawget(lfg, "categorySelection")
-        local startBtn = catSel and (rawget(catSel, "StartGroupButton")
-                                  or rawget(catSel, "startGroupButton"))
-        if startBtn then pcall(function() startBtn:Click() end) end
-    end
-
     print("|cff7289daGuildHub LFM:|r Premade Groups opened — select your "
-        .. at:lower() .. " and click |cffF2CF00List Group|r to publish.")
+        .. at:lower() .. " and click |cffF2CF00Start a Group|r to publish.")
 end
 
 -- ──────────────────────────────────────────────────────────
@@ -361,6 +354,23 @@ function Recruit:Delete(id)
         if removeFn then pcall(removeFn) end
         self._activeLFGPostId = nil
     end
+    if GH.UI and GH.UI.OnLFMUpdated then GH.UI:OnLFMUpdated() end
+end
+
+-- Called after every signup; delists the post when all slots are filled.
+-- Only the author broadcasts the deletion so peers who missed earlier signups clean up.
+function Recruit:_AutoDelistIfFull(postId, raw)
+    local post = NormalizePost(postId, raw)
+    if self:TotalOpen(post) > 0 then return end
+    self:Delete(postId)
+    if post.author == GH:GetPlayerName() then
+        local payload = table.concat({ MSG_DEL, postId }, SEP)
+        if #payload <= 250 then
+            C_ChatInfo.SendAddonMessage(GH.ADDON_PREFIX, payload, "GUILD")
+        end
+        local label = post.instanceName or post.activityType or "group"
+        print("|cff7289daGuildHub LFM:|r Your " .. label .. " group is full — listing removed.")
+    end
 end
 
 -- Sign up the current player for `role` in post `postId`.
@@ -387,6 +397,7 @@ function Recruit:Signup(postId, role)
     self:_BroadcastSignup(postId, me, role, entry.ts, GH.DB:GetLFMPoints(me))
 
     if GH.UI and GH.UI.OnLFMUpdated then GH.UI:OnLFMUpdated() end
+    self:_AutoDelistIfFull(postId, raw)
     return true
 end
 
@@ -542,6 +553,7 @@ function Recruit:OnAddonMessage(payload)
                             GH.DB:GetLFMPoints(GH:GetPlayerName()))
                     end
                     if GH.UI and GH.UI.OnLFMUpdated then GH.UI:OnLFMUpdated() end
+                    self:_AutoDelistIfFull(postId, raw)
                 end
             end
         end
@@ -565,5 +577,11 @@ function Recruit:OnAddonMessage(payload)
             end
         end
         if changed and GH.UI and GH.UI.OnLFMUpdated then GH.UI:OnLFMUpdated() end
+
+    elseif msgType == MSG_DEL and #parts >= 2 then
+        local postId = parts[2]
+        if GH.DB:GetRecruitPosts()[postId] then
+            self:Delete(postId)
+        end
     end
 end

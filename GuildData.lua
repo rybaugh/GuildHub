@@ -296,6 +296,20 @@ function GD:GetMemberTeam(memberName)
     return nil
 end
 
+function GD:GetMemberTeams(memberName)
+    local out = {}
+    for id, g in pairs(GH.DB:GetGroups()) do
+        for _, n in ipairs(g.members or {}) do
+            if n == memberName then
+                out[#out + 1] = { id = id, name = g.name, color = g.color, channelId = g.channelId }
+                break
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.name < b.name end)
+    return out
+end
+
 function GD:Refresh()
     self.members = {}
     self.byName  = {}

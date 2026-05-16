@@ -26,6 +26,40 @@ local DEFAULTS = {
         showOfflineMembers    = true,
         hideDefaultGuildFrame = true,
         debugMode             = false,
+        fontSize              = 10,
+        federationChannel     = "",   -- optional cross-realm relay channel name
+        federationPassword    = "",   -- optional relay channel password
+        -- Roster Profiles feature settings
+        rosterProfilesEnabled = true,
+        rosterShowMouseover   = true,
+        rosterShowBirthdays   = true,
+        rosterSyncEnabled     = true,
+        rosterSyncMinRank     = 4,
+        rosterAutoJoinDate    = false,
+        rosterJoinDateTarget  = "custom",
+        -- General behavior
+        showAtLogon           = false,
+        onlyShowIfLogChanges  = false,
+        -- Sync extras
+        syncAutoTriggerDelay  = 60,
+        syncRestrictIncoming  = true,
+        syncBanListMinRank    = 4,
+        syncCustomNotes       = true,
+        displaySyncMessages   = false,
+        -- Officer / auto-tagging
+        joinTagText           = "Joined:",
+        rejoinTagText         = "Rejoined:",
+        addEventsToCalendar   = false,
+        -- Scan options
+        scanIntervalSecs      = 30,
+        inactiveReturnDays    = 14,
+        announceEventsDays    = 14,
+        announceAnniversaries = true,
+        announceBirthdays     = true,
+        onlyMainForBdayAnn    = false,
+        announceLoginBirthday = true,
+        reportLevelUps        = true,
+        levelReportMin        = 10,
     },
     guilds     = {},
     sessionLog = {},
@@ -44,6 +78,27 @@ local GUILD_DEFAULTS = {
     communityMessages   = {},   -- persisted cross-guild history (14-day / 2000-msg ring)
     crossGuildLabel     = nil,  -- nil → "Cross Guild Chat"
     crossGuildSendTarget = nil, -- clubId string to send to, nil = guild chat
+    -- Roster Profiles
+    playerProfiles      = {},   -- [name] = { joinDate, joinDateVerified, joinDateHistory,
+                                --            rankHistory, birthday, altGroupId,
+                                --            customNote, customNoteEditor, customNoteTs,
+                                --            isBanned, banReason, banDate, bannedBy }
+    altGroups           = {},   -- [groupId] = { main, alts={}, ts }
+    activityLog         = {},   -- [{type, player, ts, detail, actor}]  capped 2000
+    newsBuffer          = {},   -- [{name, desc, iconTex, rawLink}]  capped 50, newest-first
+    -- Guild Recruitment (posting to in-game Guild Finder)
+    guildRecruitSettings = {
+        listed         = false,
+        focus          = "Raids",
+        lookingFor     = {},
+        language       = "English",
+        message        = "",
+        maxLevelOnly   = true,
+        minIlvlEnabled = false,
+        minIlvl        = 0,
+        updatedAt      = nil,
+        updatedBy      = nil,
+    },
 }
 
 function DB:Initialize()
@@ -321,6 +376,119 @@ function DB:NewId()
     return tostring(time()) .. "_" .. tostring(math.random(100000, 999999))
 end
 
+-- Player Profiles -----------------------------------------------------------
+
+function DB:GetPlayerProfile(name)
+    local gd = self:_GuildData()
+    if not gd then return nil end
+    gd.playerProfiles = gd.playerProfiles or {}
+    if not gd.playerProfiles[name] then
+        gd.playerProfiles[name] = {
+            joinDate         = nil,
+            joinDateVerified = false,
+            joinDateHistory  = {},
+            rankHistory      = {},
+            birthday         = nil,
+            altGroupId       = nil,
+            customNote       = "",
+            customNoteEditor = nil,
+            customNoteTs     = nil,
+            isBanned         = false,
+            banReason        = nil,
+            banDate          = nil,
+            bannedBy         = nil,
+        }
+    end
+    return gd.playerProfiles[name]
+end
+
+function DB:GetAllPlayerProfiles()
+    local gd = self:_GuildData()
+    return (gd and gd.playerProfiles) or {}
+end
+
+function DB:SavePlayerProfile(name, data)
+    local gd = self:_GuildData()
+    if gd then
+        gd.playerProfiles = gd.playerProfiles or {}
+        gd.playerProfiles[name] = data
+    end
+end
+
+-- Alt Groups ----------------------------------------------------------------
+
+function DB:GetAltGroups()
+    local gd = self:_GuildData()
+    return (gd and gd.altGroups) or {}
+end
+
+function DB:GetAltGroup(groupId)
+    local gd = self:_GuildData()
+    return gd and gd.altGroups and gd.altGroups[groupId]
+end
+
+function DB:SaveAltGroup(groupId, data)
+    local gd = self:_GuildData()
+    if gd then
+        gd.altGroups = gd.altGroups or {}
+        gd.altGroups[groupId] = data
+    end
+end
+
+function DB:DeleteAltGroup(groupId)
+    local gd = self:_GuildData()
+    if gd and gd.altGroups then gd.altGroups[groupId] = nil end
+end
+
+-- Activity Log --------------------------------------------------------------
+
+function DB:GetActivityLog()
+    local gd = self:_GuildData()
+    return (gd and gd.activityLog) or {}
+end
+
+function DB:AddActivityLog(entry)
+    local gd = self:_GuildData()
+    if not gd then return end
+    gd.activityLog = gd.activityLog or {}
+    table.insert(gd.activityLog, entry)
+    while #gd.activityLog > 2000 do
+        table.remove(gd.activityLog, 1)
+    end
+end
+
+function DB:ClearActivityLog()
+    local gd = self:_GuildData()
+    if gd then gd.activityLog = {} end
+end
+
+function DB:SetActivityLog(newLog)
+    local gd = self:_GuildData()
+    if gd then gd.activityLog = newLog end
+end
+
+-- Guild News Buffer ---------------------------------------------------------
+
+function DB:GetNewsBuffer()
+    local gd = self:_GuildData()
+    if not gd then return {} end
+    gd.newsBuffer = gd.newsBuffer or {}
+    return gd.newsBuffer
+end
+
+function DB:AddNewsEntry(entry)
+    local gd = self:_GuildData()
+    if not gd or not entry or not entry.desc then return end
+    gd.newsBuffer = gd.newsBuffer or {}
+    for _, e in ipairs(gd.newsBuffer) do
+        if e.desc == entry.desc and e.name == entry.name then return end
+    end
+    table.insert(gd.newsBuffer, 1, entry)
+    while #gd.newsBuffer > 50 do
+        table.remove(gd.newsBuffer)
+    end
+end
+
 -- Community Links -----------------------------------------------------------
 
 function DB:GetCommunityLinks()
@@ -401,4 +569,24 @@ end
 function DB:SetCrossGuildSendTarget(clubId)
     local gd = self:_GuildData()
     if gd then gd.crossGuildSendTarget = clubId end
+end
+
+-- Guild Recruitment Settings ------------------------------------------------
+
+function DB:GetGuildRecruitSettings()
+    local gd = self:_GuildData()
+    if not gd then
+        return { listed=false, focus="Raids", lookingFor={}, language="English",
+                 message="", maxLevelOnly=true, minIlvlEnabled=false, minIlvl=0 }
+    end
+    gd.guildRecruitSettings = gd.guildRecruitSettings or {
+        listed=false, focus="Raids", lookingFor={}, language="English",
+        message="", maxLevelOnly=true, minIlvlEnabled=false, minIlvl=0,
+    }
+    return gd.guildRecruitSettings
+end
+
+function DB:SaveGuildRecruitSettings(data)
+    local gd = self:_GuildData()
+    if gd then gd.guildRecruitSettings = data end
 end

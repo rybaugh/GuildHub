@@ -50,9 +50,34 @@ end
 
 -- ── Initialisation ────────────────────────────────────────────────────────
 
+-- Activates the per-guild DB namespace and reloads chat history.
+-- Must be idempotent — may be called from PLAYER_LOGIN and GUILD_ROSTER_UPDATE.
+local _guildActivated = false
+local function ActivateGuildNamespace()
+    if _guildActivated then return end
+    local currentGuild = GH:GetGuildName()
+    if not currentGuild or currentGuild == "No Guild" or currentGuild == "" then return end
+
+    GH.DB:SetActiveGuild(currentGuild)
+
+    -- Reload the guild chat ring from the now-active DB namespace.
+    -- The initial load in Chat:Initialize() ran before the guild was known.
+    GH.Chat:_LoadSavedGuildHistory()
+
+    -- If FindGuildClub or CLUB_MESSAGE_HISTORY_RECEIVED ran before PLAYER_LOGIN fired,
+    -- _LoadFromClubCache already populated Chat.guildMsgs but AddGuildMessage silently
+    -- returned false (no active guild). Re-run it now so those messages are persisted.
+    if GH.Chat.guildClubId and GH.Chat.guildStreamId then
+        GH.Chat:_LoadFromClubCache(GH.Chat.guildClubId, GH.Chat.guildStreamId)
+    end
+
+    _guildActivated = true
+end
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
 initFrame:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" and addonName == GH.ADDON_NAME then
         GH:Initialize()
@@ -70,19 +95,16 @@ initFrame:SetScript("OnEvent", function(_, event, addonName)
             elseif C_GuildInfo and C_GuildInfo.GuildRoster then
                 C_GuildInfo.GuildRoster()
             end
-
-            -- Activate the per-guild DB namespace for this character's guild.
-            -- All group/chat/event data is now scoped under GuildHubDB.guilds[guildName],
-            -- so characters in different guilds never share data.
-            local currentGuild = GH:GetGuildName()
-            if currentGuild and currentGuild ~= "No Guild" and currentGuild ~= "" then
-                GH.DB:SetActiveGuild(currentGuild)
-                -- Reload the guild chat ring from the now-active namespace.
-                -- The initial load in Chat:Initialize() ran before the guild was known.
-                GH.Chat:_LoadSavedGuildHistory()
-            end
+            -- Activate now; if guild name isn't ready yet GUILD_ROSTER_UPDATE will retry.
+            ActivateGuildNamespace()
         end
         SetupGuildFrameReplacement()
+    elseif event == "GUILD_ROSTER_UPDATE" then
+        -- Fallback: GetGuildInfo("player") may not be reliable at PLAYER_LOGIN time.
+        ActivateGuildNamespace()
+        if _guildActivated then
+            initFrame:UnregisterEvent("GUILD_ROSTER_UPDATE")
+        end
     end
 end)
 
@@ -187,6 +209,9 @@ local function HandleSlash(msg)
     elseif msg == "lfm" or msg == "recruit" then
         GH.UI:Show()
         if GH.UI.window then GH.UI.window.SelectTab("LFM") end
+    elseif msg == "activity" or msg == "log" then
+        GH.UI:Show()
+        if GH.UI.window then GH.UI.window.SelectTab("Activity") end
     elseif msg == "settings" then
         GH.UI:Show()
         if GH.UI.ToggleSettings then GH.UI:ToggleSettings() end
@@ -217,6 +242,7 @@ local function HandleSlash(msg)
         print("|cff7289daGuildHub|r commands:")
         print("  /gh               — open window")
         print("  /gh members       — jump to Members tab")
+        print("  /gh activity      — jump to Activity log tab  (also: /gh log)")
         print("  /gh chat          — jump to Chat tab")
         print("  /gh teams         — jump to Teams tab")
         print("  /gh events        — jump to Events tab")
@@ -225,9 +251,17 @@ local function HandleSlash(msg)
         print("  /gh reset         — reset all saved data")
         print("  /gh debug [on|off] — toggle live debug logging")
         print("  /gh debugdump     — dump full debug log to chat")
+        print("  /roster           — shortcut to open Members tab")
     end
 end
 
 rawset(_G, "SLASH_GUILDHUB1", "/gh")
 rawset(_G, "SLASH_GUILDHUB2", "/guildhub")
 SlashCmdList["GUILDHUB"] = HandleSlash
+
+-- /roster opens GuildHub Members tab directly
+rawset(_G, "SLASH_GUILDHUB_ROSTER1", "/roster")
+SlashCmdList["GUILDHUB_ROSTER"] = function()
+    GH.UI:Show()
+    if GH.UI.window then GH.UI.window.SelectTab("Members") end
+end

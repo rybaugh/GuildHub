@@ -53,7 +53,7 @@ function UI:CreateGroupsTab(parent, w, h)
     S:Bg(detailPanel, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 0.5)
     frame.detailPanel = detailPanel
 
-    local detailTitle = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local detailTitle = S:FS(detailPanel, "OVERLAY", "large")
     detailTitle:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 12, -12)
     detailTitle:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
     frame.detailTitle = detailTitle
@@ -92,7 +92,7 @@ function UI:CreateGroupsTab(parent, w, h)
     frame.memberContent = memberContent
 
     -- Add member controls (bottom of detail)
-    local addLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local addLabel = S:FS(detailPanel, "OVERLAY")
     addLabel:SetPoint("BOTTOMLEFT", detailPanel, "BOTTOMLEFT", 12, 20)
     addLabel:SetText("Add member:")
     addLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -112,7 +112,7 @@ function UI:CreateGroupsTab(parent, w, h)
     end)
 
     -- "Select a group" placeholder
-    local placeholder = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local placeholder = S:FS(detailPanel, "OVERLAY", "normal")
     placeholder:SetAllPoints(detailPanel)
     placeholder:SetText("Select a group from the left\nor create a new one.")
     placeholder:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -156,12 +156,12 @@ function UI:RefreshGroupsTab()
         )
 
         local memberCount = g.members and #g.members or 0
-        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local label = S:FS(btn, "OVERLAY", "normal")
         label:SetPoint("LEFT", btn, "LEFT", 10, 2)
         label:SetText(g.name)
         label:SetTextColor(isSelected and 1 or S.COLOR.TEXT[1], isSelected and 1 or S.COLOR.TEXT[2], isSelected and 1 or S.COLOR.TEXT[3])
 
-        local countLabel = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local countLabel = S:FS(btn, "OVERLAY")
         countLabel:SetPoint("LEFT", btn, "LEFT", 10, -10)
         countLabel:SetText(memberCount .. " member" .. (memberCount == 1 and "" or "s"))
         countLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -229,13 +229,13 @@ function UI:RefreshGroupDetail(groupId)
             dot:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 1)
         end
 
-        local nameLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local nameLabel = S:FS(row, "OVERLAY", "normal")
         nameLabel:SetPoint("LEFT", row, "LEFT", 20, 0)
         nameLabel:SetText(memberName)
         nameLabel:SetTextColor(cr, cg, cb)
 
         if info and info.rank then
-            local rankLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local rankLabel = S:FS(row, "OVERLAY")
             rankLabel:SetPoint("LEFT", row, "LEFT", 180, 0)
             rankLabel:SetText(info.rank)
             rankLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -261,7 +261,7 @@ function UI:ShowGroupNameDialog(existingName, callback)
     dlg:SetFrameStrata("DIALOG")
     S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
 
-    local title = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = S:FS(dlg, "OVERLAY", "normal")
     title:SetPoint("TOP", dlg, "TOP", 0, -12)
     title:SetText(existingName and "Rename" or "New Group Name")
     title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])

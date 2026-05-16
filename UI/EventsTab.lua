@@ -28,7 +28,9 @@ function UI:CreateEventsTab(parent, w)
     listPanel:SetPoint("TOPLEFT",    frame, "TOPLEFT",    10, -10)
     listPanel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 10)
     listPanel:SetWidth(220)
-    S:Bg(listPanel, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 1)
+    S:GradientBg(listPanel, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL[1],       S.COLOR.PANEL[2],       S.COLOR.PANEL[3],       1)
 
     S:Header(listPanel, "  UPCOMING EVENTS"):SetPoint("TOPLEFT", listPanel, "TOPLEFT", 6, -8)
 
@@ -38,12 +40,26 @@ function UI:CreateEventsTab(parent, w)
         UI:ShowEventCreateDialog()
     end)
 
-    local sf = CreateFrame("ScrollFrame", nil, listPanel, "UIPanelScrollFrameTemplate")
+    local sf = CreateFrame("ScrollFrame", nil, listPanel)
     sf:SetPoint("TOPLEFT",     listPanel, "TOPLEFT",     4,  -58)
-    sf:SetPoint("BOTTOMRIGHT", listPanel, "BOTTOMRIGHT", -18, 4)
+    sf:SetPoint("BOTTOMRIGHT", listPanel, "BOTTOMRIGHT", -4, 4)
+    sf:EnableMouseWheel(true)
+    sf:SetScript("OnMouseWheel", function(self, delta)
+        local max = self:GetVerticalScrollRange()
+        self:SetVerticalScroll(math.max(0, math.min(max,
+            self:GetVerticalScroll() - delta * 40)))
+    end)
     local listContent = CreateFrame("Frame", nil, sf)
-    listContent:SetSize(198, 10)
+    listContent:SetHeight(10)
     sf:SetScrollChild(listContent)
+
+    local function SyncEventListWidth()
+        local sfW = sf:GetWidth()
+        if sfW > 0 then listContent:SetWidth(sfW) end
+    end
+    sf:SetScript("OnSizeChanged", SyncEventListWidth)
+    C_Timer.After(0, SyncEventListWidth)
+
     frame.eventListContent = listContent
 
     -- Right: event detail
@@ -53,23 +69,23 @@ function UI:CreateEventsTab(parent, w)
     S:Bg(detailPanel, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 0.3)
     frame.detailPanel = detailPanel
 
-    local detailTitle = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local detailTitle = S:FS(detailPanel, "OVERLAY", "large")
     detailTitle:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 12, -14)
     detailTitle:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
     detailTitle:SetWidth(w - 360)
     frame.detailTitle = detailTitle
 
-    local detailDate = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local detailDate = S:FS(detailPanel, "OVERLAY", "normal")
     detailDate:SetPoint("TOPLEFT", detailTitle, "BOTTOMLEFT", 0, -6)
     detailDate:SetTextColor(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3])
     frame.detailDate = detailDate
 
-    local detailType = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local detailType = S:FS(detailPanel, "OVERLAY")
     detailType:SetPoint("TOPLEFT", detailDate, "BOTTOMLEFT", 0, -4)
     detailType:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     frame.detailType = detailType
 
-    local detailAuthor = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local detailAuthor = S:FS(detailPanel, "OVERLAY")
     detailAuthor:SetPoint("TOPLEFT", detailType, "BOTTOMLEFT", 0, -4)
     detailAuthor:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     frame.detailAuthor = detailAuthor
@@ -77,7 +93,7 @@ function UI:CreateEventsTab(parent, w)
     local divLine = S:HLine(detailPanel, w - 260)
     divLine:SetPoint("TOPLEFT", detailAuthor, "BOTTOMLEFT", 0, -8)
 
-    local detailDesc = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local detailDesc = S:FS(detailPanel, "OVERLAY")
     detailDesc:SetPoint("TOPLEFT",  detailPanel, "TOPLEFT",  12, -110)
     detailDesc:SetPoint("TOPRIGHT", detailPanel, "TOPRIGHT", -12, -110)
     detailDesc:SetJustifyH("LEFT")
@@ -88,7 +104,7 @@ function UI:CreateEventsTab(parent, w)
     frame.detailDesc = detailDesc
 
     -- RSVP buttons
-    local rsvpLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local rsvpLabel = S:FS(detailPanel, "OVERLAY")
     rsvpLabel:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 12, -240)
     rsvpLabel:SetText("RSVP:")
     rsvpLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -111,13 +127,13 @@ function UI:CreateEventsTab(parent, w)
     frame.noBtn    = noBtn
 
     -- Attendee list
-    local attendeesLabel = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local attendeesLabel = S:FS(detailPanel, "OVERLAY")
     attendeesLabel:SetPoint("TOPLEFT", detailPanel, "TOPLEFT", 12, -300)
     attendeesLabel:SetText("Attendees:")
     attendeesLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     frame.attendeesLabel = attendeesLabel
 
-    local attendeesList = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local attendeesList = S:FS(detailPanel, "OVERLAY")
     attendeesList:SetPoint("TOPLEFT", attendeesLabel, "BOTTOMLEFT", 0, -6)
     attendeesList:SetPoint("BOTTOMRIGHT", detailPanel, "BOTTOMRIGHT", -12, 46)
     attendeesList:SetJustifyH("LEFT")
@@ -139,7 +155,7 @@ function UI:CreateEventsTab(parent, w)
     frame.deleteBtn = deleteBtn
 
     -- Placeholder
-    local placeholder = detailPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local placeholder = S:FS(detailPanel, "OVERLAY", "normal")
     placeholder:SetAllPoints(detailPanel)
     placeholder:SetText("Select an event\nor schedule a new one.")
     placeholder:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -201,7 +217,7 @@ function UI:RefreshEventsTab()
         typeBar:SetPoint("LEFT", btn, "LEFT", 0, 0)
         typeBar:SetColorTexture(typeColor[1], typeColor[2], typeColor[3], isPast and 0.3 or 1)
 
-        local titleLabel = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local titleLabel = S:FS(btn, "OVERLAY", "normal")
         titleLabel:SetPoint("TOPLEFT", btn, "TOPLEFT", 10, -8)
         titleLabel:SetWidth(ev.repeatType and 160 or 185)
         titleLabel:SetJustifyH("LEFT")
@@ -210,7 +226,7 @@ function UI:RefreshEventsTab()
 
         -- Repeat badge (top-right of the row)
         if ev.repeatType then
-            local repeatBadge = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local repeatBadge = S:FS(btn, "OVERLAY")
             repeatBadge:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -6, -8)
             local badgeText = ev.repeatType == "weekly"   and "Weekly"
                            or ev.repeatType == "biweekly" and "Bi-Wkly"
@@ -218,7 +234,7 @@ function UI:RefreshEventsTab()
             repeatBadge:SetText("|cff7289da" .. badgeText .. "|r")
         end
 
-        local dateLabel = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local dateLabel = S:FS(btn, "OVERLAY")
         dateLabel:SetPoint("TOPLEFT", btn, "TOPLEFT", 10, -24)
         dateLabel:SetText(GH.Events:FormatDate(ev.date))
         dateLabel:SetTextColor(
@@ -229,7 +245,7 @@ function UI:RefreshEventsTab()
 
         local myRsvp = GH.Events:GetRSVP(ev.id)
         if myRsvp then
-            local rsvpLabel = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            local rsvpLabel = S:FS(btn, "OVERLAY")
             rsvpLabel:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -6, 4)
             local rsvpColors = { yes = {0.2,0.9,0.3}, maybe = {0.9,0.7,0.1}, no = {0.9,0.3,0.3} }
             local rc = rsvpColors[myRsvp] or {0.5,0.5,0.5}
@@ -385,7 +401,7 @@ function UI:ShowEventCreateDialog()
     S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.98)
     S:Border(dlg)
 
-    local titleHdr = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local titleHdr = S:FS(dlg, "OVERLAY", "large")
     titleHdr:SetPoint("TOP", dlg, "TOP", 0, -14)
     titleHdr:SetText("Schedule New Event")
     titleHdr:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
@@ -399,7 +415,7 @@ function UI:ShowEventCreateDialog()
     headerLine:SetPoint("LEFT", dlg, "LEFT", 20, 0)
 
     local function Label(text, anchor, offY)
-        local l = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local l = S:FS(dlg, "OVERLAY")
         l:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, offY or -8)
         l:SetText(text)
         l:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -537,25 +553,25 @@ function UI:ShowEventCreateDialog()
         local downBtn = MakeChevronBtn("BOTTOMLEFT",  f, "BOTTOMLEFT",  1,  1, false)
 
         -- Previous value (dimmed, screen y≈22)
-        local prevFs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local prevFs = S:FS(f, "OVERLAY")
         prevFs:SetPoint("CENTER", f, "CENTER", 0, 22)
         prevFs:SetWidth(pickerW - 6); prevFs:SetJustifyH("CENTER")
         prevFs:SetTextColor(0.35, 0.35, 0.50)
 
         -- Current value (bright, screen y≈39 — aligned with the highlight strip)
-        local currFs = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local currFs = S:FS(f, "OVERLAY", "normal")
         currFs:SetPoint("CENTER", f, "CENTER", 0, 6)
         currFs:SetWidth(pickerW - 6); currFs:SetJustifyH("CENTER")
         currFs:SetTextColor(1, 1, 1)
 
         -- Next value (dimmed, screen y≈56)
-        local nextFs = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local nextFs = S:FS(f, "OVERLAY")
         nextFs:SetPoint("CENTER", f, "CENTER", 0, -10)
         nextFs:SetWidth(pickerW - 6); nextFs:SetJustifyH("CENTER")
         nextFs:SetTextColor(0.35, 0.35, 0.50)
 
         -- Column label lives inside downBtn so it renders above the button's own bg.
-        local colLbl = downBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        local colLbl = S:FS(downBtn, "OVERLAY")
         colLbl:SetAllPoints()
         colLbl:SetJustifyH("CENTER")
         colLbl:SetJustifyV("MIDDLE")
@@ -628,7 +644,7 @@ function UI:ShowEventCreateDialog()
     minPicker:SetPoint(  "TOPLEFT", hourPicker,  "TOPRIGHT",    6,  0)
 
     -- ":" between hour and minute
-    local colonLbl = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local colonLbl = S:FS(dlg, "OVERLAY", "normal")
     colonLbl:SetPoint("RIGHT", minPicker, "LEFT", -1, 0)
     colonLbl:SetText(":")
     colonLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -660,7 +676,7 @@ function UI:ShowEventCreateDialog()
         { label = "Bi-Weekly", value = "biweekly" },
         { label = "Monthly",   value = "monthly"  },
     }
-    local repeatLabel = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local repeatLabel = S:FS(dlg, "OVERLAY")
     repeatLabel:SetPoint("LEFT", typeBtn, "RIGHT", 10, 0)
     repeatLabel:SetText("Repeat:")
     repeatLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -683,7 +699,7 @@ function UI:ShowEventCreateDialog()
     end
     local teamOpts = BuildTeamOpts()
 
-    local hostLbl = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local hostLbl = S:FS(dlg, "OVERLAY")
     hostLbl:SetPoint("TOPLEFT", typeBtn, "BOTTOMLEFT", 0, -8)
     hostLbl:SetText("Host Team:")
     hostLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -697,7 +713,7 @@ function UI:ShowEventCreateDialog()
     end)
 
     -- "Team Only" ON/OFF toggle (shown inline to the right of the team button)
-    local teamOnlyLbl = dlg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local teamOnlyLbl = S:FS(dlg, "OVERLAY")
     teamOnlyLbl:SetPoint("LEFT", teamBtn, "RIGHT", 10, 0)
     teamOnlyLbl:SetText("Team Only:")
     teamOnlyLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
@@ -709,7 +725,7 @@ function UI:ShowEventCreateDialog()
     local tObg = teamOnlyBtn:CreateTexture(nil, "BACKGROUND")
     tObg:SetAllPoints()
     tObg:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 0.5)
-    local tOlbl = teamOnlyBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local tOlbl = S:FS(teamOnlyBtn, "OVERLAY")
     tOlbl:SetAllPoints(); tOlbl:SetJustifyH("CENTER")
     tOlbl:SetText("OFF")
     teamOnlyBtn:SetScript("OnClick", function()
