@@ -974,11 +974,22 @@ function UI:BuildSettingsPage(parent)
     -- 2 — Hide Default WoW Guild Window
     local row2 = MakeRow("Hide Default Guild Window", rowY)
     rowY = rowY - ROW_H
-    MakeToggle(row2, "hideDefaultGuildFrame", true)
+    do
+        local btn = MakeToggle(row2, "hideDefaultGuildFrame", true)
+        local origClick = btn:GetScript("OnClick")
+        btn:SetScript("OnClick", function()
+            origClick()
+            if GH.DB:GetSetting("hideDefaultGuildFrame") ~= false then
+                GH.ApplyGuildKeybindOverride()
+            else
+                GH.ReleaseGuildKeybindOverride()
+            end
+        end)
+    end
     do
         local hint = S:FS(row2, "OVERLAY")
         hint:SetPoint("LEFT", row2, "LEFT", 410, 0)
-        hint:SetText("Replace WoW's guild window with GuildHub (restart to apply)")
+        hint:SetText("Replace WoW's guild window with GuildHub")
         hint:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     end
 

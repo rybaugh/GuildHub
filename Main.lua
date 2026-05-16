@@ -18,26 +18,64 @@ local GameTooltip     = _G.GameTooltip
 -- In WoW 12.x the guild window is CommunitiesFrame; GuildFrame is legacy.
 -- Defer by one tick so the hide runs after WoW finishes showing the frame.
 local function HideDefaultGuildFrames()
-    C_Timer.After(0, function()
-        for _, name in ipairs({ "GuildFrame", "CommunitiesFrame" }) do
-            local f = rawget(_G, name)
-            if f and f:IsShown() then f:Hide() end
-        end
-    end)
+    for _, name in ipairs({ "GuildFrame", "CommunitiesFrame" }) do
+        local f = rawget(_G, name)
+        if f and f:IsShown() then f:Hide() end
+    end
+end
+
+-- Invisible button used as the TOGGLEGUILDTAB keybind redirect target.
+-- SetOverrideBindingClick routes the bound key (default G) here so
+-- CommunitiesFrame is never opened, eliminating the flash and layout drift.
+local _ghKeyBtn
+
+local function GetOrCreateKeyButton()
+    if _ghKeyBtn then return _ghKeyBtn end
+    _ghKeyBtn = CreateFrame("Button", "GuildHubKeyBindButton", UIParent)
+    _ghKeyBtn:SetSize(1, 1)
+    _ghKeyBtn:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+    _ghKeyBtn:SetAlpha(0)
+    _ghKeyBtn:EnableMouse(false)
+    _ghKeyBtn:SetScript("OnClick", function() GH.UI:Toggle() end)
+    return _ghKeyBtn
+end
+
+function GH.ApplyGuildKeybindOverride()
+    local btn = GetOrCreateKeyButton()
+    local key1, key2 = GetBindingKey("TOGGLEGUILDTAB")
+    if key1 then SetOverrideBindingClick(btn, true, key1, "GuildHubKeyBindButton") end
+    if key2 then SetOverrideBindingClick(btn, true, key2, "GuildHubKeyBindButton") end
+end
+
+function GH.ReleaseGuildKeybindOverride()
+    if _ghKeyBtn then ClearOverrideBindings(_ghKeyBtn) end
 end
 
 local function SetupGuildFrameReplacement()
-    -- Path 1: event fired by the Communities/guild button in 12.x
+    -- Path 1: event fired by Communities button / other non-keybind entry points.
+    -- Defer the hide by one tick so WoW finishes showing the frame before we hide it.
     local evFrame = CreateFrame("Frame")
     pcall(function() evFrame:RegisterEvent("OPEN_GUILD_FRAME") end)
-    evFrame:SetScript("OnEvent", function()
+    evFrame:RegisterEvent("UPDATE_BINDINGS")
+    evFrame:SetScript("OnEvent", function(_, event)
+        if event == "UPDATE_BINDINGS" then
+            if GH.DB:GetSetting("hideDefaultGuildFrame") ~= false then
+                GH.ApplyGuildKeybindOverride()
+            end
+            return
+        end
         if GH.DB:GetSetting("hideDefaultGuildFrame") ~= false then
-            HideDefaultGuildFrames()
+            C_Timer.After(0, HideDefaultGuildFrames)
         end
         GH.UI:Show()
     end)
 
-    -- Path 2: G keybind / ToggleGuildFrame call
+    -- Path 2: steal TOGGLEGUILDTAB keybind so CommunitiesFrame is never opened
+    if GH.DB:GetSetting("hideDefaultGuildFrame") ~= false then
+        GH.ApplyGuildKeybindOverride()
+    end
+
+    -- Path 3: ToggleGuildFrame hook as fallback for code-driven calls
     if rawget(_G, "ToggleGuildFrame") then
         hooksecurefunc("ToggleGuildFrame", function()
             if GH.DB:GetSetting("hideDefaultGuildFrame") ~= false then
