@@ -5,6 +5,7 @@
 ## Version: 1.0
 ## SavedVariables: GuildHubDB
 
+Library/BNetChatThrottleLib.lua
 Core.lua
 Debug.lua
 Database.lua
