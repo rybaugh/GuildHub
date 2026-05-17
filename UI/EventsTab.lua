@@ -794,8 +794,8 @@ function UI:ShowEventCreateDialog()
 
     dlg.titleBox  = titleBox
     dlg.descBox   = descBox
-    dlg.typeDd   = typeDd    -- TODO(Task3): update Create handler
-    dlg.repeatDd = repeatDd  -- TODO(Task3): update Create handler
+    dlg.typeDd   = typeDd
+    dlg.repeatDd = repeatDd
     dlg.teamBtn   = teamBtn
 
     titleBox:SetFocus()
