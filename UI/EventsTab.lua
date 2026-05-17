@@ -756,8 +756,8 @@ function UI:ShowEventCreateDialog()
         })
         local selTeam = teamOpts[dlg.teamIdx]
         GH.Events:Create(evTitle, evDesc, ts,
-            GH.Events.EVENT_TYPES[dlg.typeIdx],
-            REPEAT_OPTS[dlg.repeatIdx].value,
+            typeDd.GetValue(),
+            repeatDd.GetValue(),
             selTeam.id,
             selTeam.id and dlg.teamOnly or false)
         dlg:Hide()
@@ -782,8 +782,8 @@ function UI:ShowEventCreateDialog()
         dayPicker.SetValues(BuildDays(dm, dyNum), false)
         dayPicker.SetIndex(math.min(dd, #BuildDays(dm, dyNum)))
         hourPicker.SetIndex(21); minPicker.SetIndex(1)
-        repeatDd:SetSelectedIndex(1)  -- TODO(Task3): update Create handler
-        typeDd:SetSelectedIndex(1)    -- TODO(Task3): update Create handler
+        repeatDd.Reset()
+        typeDd.Reset()
         -- Refresh team list in case teams were added/removed since last open
         teamOpts = BuildTeamOpts()
         dlg.teamIdx = 1; teamBtn.label:SetText(teamOpts[1].label)
