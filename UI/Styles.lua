@@ -297,6 +297,7 @@ function S:Dropdown(parent, options, w, h)
             CreateColor(1, 1, 1, 0.08), CreateColor(1, 1, 1, 0))
     end)
     if not sok then shimmer:SetColorTexture(1, 1, 1, 0.05) end
+    btn.shimmer = shimmer
 
     local label = btn:CreateFontString(nil, "OVERLAY")
     label:SetFontObject(S.FontSmall)
@@ -314,9 +315,11 @@ function S:Dropdown(parent, options, w, h)
 
     btn:SetScript("OnEnter", function(self)
         self.bg:SetColorTexture(0.52, 0.66, 1.00, 0.95)
+        self.label:SetTextColor(1, 1, 1, 1)
     end)
     btn:SetScript("OnLeave", function(self)
         self.bg:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 0.82)
+        self.label:SetTextColor(1, 1, 1, 1)
     end)
 
     -- Popup (UIParent-parented so it floats above the dialog)
@@ -358,8 +361,15 @@ function S:Dropdown(parent, options, w, h)
     end
 
     local function RebuildRows()
-        for _, r in ipairs(rows) do r:Hide() end
+        for _, r in ipairs(rows) do
+            r:SetParent(nil)
+            r:Hide()
+        end
         rows = {}
+        if #opts == 0 then
+            popup:SetSize(w, 0)
+            return
+        end
         popup:SetSize(w, ROW_H * #opts)
         for i, opt in ipairs(opts) do
             local row = CreateFrame("Button", nil, popup)
