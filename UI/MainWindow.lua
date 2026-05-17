@@ -1659,7 +1659,7 @@ function UI:RefreshGuildNews()
     end
 
     -- ── Source 2: persistent buffer (achievements + saved WoW API news) ────────
-    for _, entry in ipairs(win.newsBuffer or {}) do
+    for _, entry in ipairs(GH.DB:GetNewsBuffer()) do
         if rowIdx >= #rows then break end
         if not shown[entry.desc] then
             rowIdx = rowIdx + 1
