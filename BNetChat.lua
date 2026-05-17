@@ -8,8 +8,24 @@ local GH = GuildHub
 local BNC = GH.BNetChat
 
 -- ── Constants ──────────────────────────────────────────────────────────────────
-local PREFIX_BNET  = "GHBN"   -- addon prefix carried in BNSendGameData calls
-local PREFIX_CHAN   = "GHXC"  -- addon prefix for the optional channel relay bus
+local PREFIX_BNET = "GHBN"   -- addon prefix for BNSendGameData calls (BNet-only)
+local TAG_COUNT   = 25
+local PRIO_LIVE   = "ALERT"  -- live guild chat relay
+local PRIO_META   = "NORMAL" -- PING, PONG, profile sync
+local PRIO_HIST   = "BULK"   -- history chunks
+
+-- Populated at module load; used for O(1) receive filtering and random tag picks.
+local _TAGS    = {}  -- [prefixString] = true
+local _TAG_ARR = {}  -- [1..TAG_COUNT] = prefixString
+for i = 1, TAG_COUNT do
+    local t = string.format("GHCH%02d", i)
+    _TAGS[t]    = true
+    _TAG_ARR[i] = t
+end
+
+local function GetRandomTag()
+    return _TAG_ARR[math.random(TAG_COUNT)]
+end
 local MSG_PING     = "P"      -- peer presence probe
 local MSG_PONG     = "Q"      -- peer presence reply
 local MSG_GCHAT    = "G"      -- cross-guild chat payload
@@ -106,11 +122,20 @@ local function BNSend(gameID, wire)
     if fn then pcall(fn, tonumber(gameID), PREFIX_BNET, wire) end
 end
 
-local function ChanSend(wire)
+local function ChanSend(wire, prio)
     if not BNC._chanNum then return end
-    local C_ChatInfo = rawget(_G, "C_ChatInfo")
-    if C_ChatInfo then
-        pcall(C_ChatInfo.SendAddonMessage, PREFIX_CHAN, wire, "CHANNEL", BNC._chanNum)
+    local ctl = rawget(_G, "BNetChatThrottleLib")
+    if ctl then
+        pcall(ctl.SendAddonMessage, ctl, prio or PRIO_META,
+              GetRandomTag(), wire, "CHANNEL", BNC._chanNum)
+    end
+end
+
+local function GuildSend(wire, prio)
+    local ctl = rawget(_G, "BNetChatThrottleLib")
+    if ctl then
+        pcall(ctl.SendAddonMessage, ctl, prio or PRIO_META,
+              GetRandomTag(), wire, "GUILD")
     end
 end
 
@@ -120,8 +145,8 @@ local function SendToPeers(frags)
     end
 end
 
-local function SendToChannel(frags)
-    for _, f in ipairs(frags) do ChanSend(f) end
+local function SendToChannel(frags, prio)
+    for _, f in ipairs(frags) do ChanSend(f, prio) end
 end
 
 -- ── Outbound relay ────────────────────────────────────────────────────────────
@@ -136,10 +161,9 @@ function BNC:RelayGuildChat(text)
 
     BNC._seen[key] = time()  -- pre-register so our own echo is ignored on arrival
 
-    local bnFrags  = Fragment(payload, key, PACKET_BN)
-    local chFrags  = Fragment(payload, key, PACKET_CH)
-    SendToPeers(bnFrags)
-    SendToChannel(chFrags)
+    local frags = Fragment(payload, key, PACKET_BN)
+    SendToPeers(frags)
+    SendToChannel(frags, PRIO_LIVE)
 
     GH:Debug("BNetChat", "RelayGuildChat key=%s", key)
 end
@@ -278,7 +302,7 @@ end
 
 -- ── Unified receive entry point ───────────────────────────────────────────────
 local function OnReceive(prefix, raw, protocol, senderGameID)
-    if prefix ~= PREFIX_BNET and prefix ~= PREFIX_CHAN then return end
+    if prefix ~= PREFIX_BNET and not _TAGS[prefix] then return end
 
     local key, n, total, body = ParseHeader(raw)
     if not key then return end
@@ -348,7 +372,9 @@ function BNC:Initialize()
 
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         C_ChatInfo.RegisterAddonMessagePrefix(PREFIX_BNET)
-        C_ChatInfo.RegisterAddonMessagePrefix(PREFIX_CHAN)
+        for _, t in ipairs(_TAG_ARR) do
+            C_ChatInfo.RegisterAddonMessagePrefix(t)
+        end
     end
 
     -- BN_CHAT_MSG_ADDON delivers BNet game-data messages.
@@ -362,9 +388,10 @@ function BNC:Initialize()
     -- CHAT_MSG_ADDON delivers messages from the optional channel relay bus.
     local chFrame = CreateFrame("Frame")
     chFrame:RegisterEvent("CHAT_MSG_ADDON")
-    chFrame:SetScript("OnEvent", function(_, _, prefix, msg)
-        if prefix == PREFIX_CHAN then
-            OnReceive(prefix, msg, "CHANNEL", nil)
+    chFrame:SetScript("OnEvent", function(_, _, prefix, msg, distrib)
+        if _TAGS[prefix] then
+            local proto = (distrib == "GUILD") and "GUILD" or "CHANNEL"
+            OnReceive(prefix, msg, proto, nil)
         end
     end)
     BNC._chFrame = chFrame
