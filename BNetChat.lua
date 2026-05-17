@@ -294,7 +294,7 @@ local function DispatchPayload(payload, protocol, senderGameID)
                 local rkey  = NewKey()
                 BNC._seen[rkey] = ts
                 local frags = Fragment(relayPayload, rkey, PACKET_CH)
-                SendToChannel(frags)
+                SendToChannel(frags, PRIO_LIVE)
             end
         end
     end
