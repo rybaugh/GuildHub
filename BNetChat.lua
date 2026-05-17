@@ -170,19 +170,33 @@ end
 
 -- ── Peer discovery ────────────────────────────────────────────────────────────
 function BNC:PingAllFriends()
-    local payload = table.concat({ MSG_PING, GH:GetPlayerName(), GH:GetGuildName() }, SEP)
-    local frags   = Fragment(payload, NewKey(), PACKET_BN)
+    local payload = table.concat(
+        { MSG_PING, GH:GetPlayerName(), GH:GetGuildName(),
+          tostring(GH.DB:GetLastLogoutTime()) }, SEP)
+    local key   = NewKey()
+    local frags = Fragment(payload, key, PACKET_BN)
+
+    -- BNet: whisper each online WoW friend
     local targets = OnlineWoWGameIDs()
     for _, gid in ipairs(targets) do
         for _, f in ipairs(frags) do BNSend(gid, f) end
     end
-    GH:Debug("BNetChat", "PingAllFriends: %d online friends probed", #targets)
+
+    -- Guild channel: broadcast for same-realm guildmates (no BNet required)
+    for _, f in ipairs(frags) do GuildSend(f, PRIO_META) end
+
+    GH:Debug("BNetChat", "PingAllFriends: %d BNet friends + guild broadcast", #targets)
 end
 
 local function ReplyPong(gameID)
     local payload = table.concat({ MSG_PONG, GH:GetPlayerName(), GH:GetGuildName() }, SEP)
     local frags   = Fragment(payload, NewKey(), PACKET_BN)
-    for _, f in ipairs(frags) do BNSend(gameID, f) end
+    if gameID then
+        for _, f in ipairs(frags) do BNSend(gameID, f) end
+    else
+        -- Received via guild channel; reply on the same channel
+        for _, f in ipairs(frags) do GuildSend(f, PRIO_META) end
+    end
 end
 
 -- ── Fragment reassembly ───────────────────────────────────────────────────────
@@ -210,9 +224,15 @@ local function Reassemble(key)
 end
 
 -- ── Register a discovered peer ────────────────────────────────────────────────
-local function RegisterPeer(gameID, name, guild)
-    local isNew = BNC._peers[gameID] == nil
-    BNC._peers[gameID] = { name = name, guild = guild, lastSeen = time() }
+local function RegisterPeer(peerKey, name, guild, lastLogoutTs, protocol)
+    local isNew = BNC._peers[peerKey] == nil
+    BNC._peers[peerKey] = {
+        name         = name,
+        guild        = guild,
+        lastSeen     = time(),
+        lastLogoutTs = tonumber(lastLogoutTs) or 0,
+        protocol     = protocol or "BNET",
+    }
     if isNew and GH.UI and GH.UI.OnChannelListChanged then
         GH.UI:OnChannelListChanged()
     end
@@ -228,14 +248,18 @@ local function DispatchPayload(payload, protocol, senderGameID)
 
     local kind = fields[1]
 
-    if kind == MSG_PING and senderGameID then
-        RegisterPeer(senderGameID, fields[2] or "?", fields[3] or "?")
-        GH:Debug("BNetChat", "Ping from %s [%s]", fields[2], fields[3])
-        ReplyPong(senderGameID)
+    if kind == MSG_PING then
+        local peerKey  = senderGameID or ("guild:" .. (fields[2] or "unknown"))
+        local peerProto = senderGameID and "BNET" or "GUILD"
+        RegisterPeer(peerKey, fields[2] or "?", fields[3] or "?", fields[4], peerProto)
+        GH:Debug("BNetChat", "Ping from %s [%s] via %s", fields[2], fields[3], peerProto)
+        ReplyPong(senderGameID)  -- nil → replies via guild channel
 
-    elseif kind == MSG_PONG and senderGameID then
-        RegisterPeer(senderGameID, fields[2] or "?", fields[3] or "?")
-        GH:Debug("BNetChat", "Pong from %s [%s]", fields[2], fields[3])
+    elseif kind == MSG_PONG then
+        local peerKey  = senderGameID or ("guild:" .. (fields[2] or "unknown"))
+        local peerProto = senderGameID and "BNET" or "GUILD"
+        RegisterPeer(peerKey, fields[2] or "?", fields[3] or "?", nil, peerProto)
+        GH:Debug("BNetChat", "Pong from %s [%s] via %s", fields[2], fields[3], peerProto)
 
     elseif kind == MSG_GCHAT and #fields >= 5 then
         local sender    = fields[2]
