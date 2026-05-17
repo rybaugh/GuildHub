@@ -1179,12 +1179,12 @@ function UI:BuildSettingsPage(parent)
         local chan  = GH.BNetChat:GetFederationChannelName()
         if peers > 0 then
             local s = peers == 1 and "peer" or "peers"
-            fedStatusFS:SetText(peers .. " GuildHub " .. s .. " discovered via BNet"
+            fedStatusFS:SetText(peers .. " GuildHub " .. s .. " discovered"
                 .. (chan ~= "" and "  ·  chan: " .. chan or ""))
         elseif chan ~= "" then
-            fedStatusFS:SetText("Channel: |cffffffff" .. chan .. "|r  (no BNet peers yet)")
+            fedStatusFS:SetText("Channel: |cffffffff" .. chan .. "|r  (no peers yet)")
         else
-            fedStatusFS:SetText("No peers found — BNet scan runs 20 s after login")
+            fedStatusFS:SetText("No peers found — scan runs 20 s after login")
         end
     end
     RefreshFedStatus()
