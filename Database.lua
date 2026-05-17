@@ -483,7 +483,11 @@ function DB:AddNewsEntry(entry)
     for _, e in ipairs(gd.newsBuffer) do
         if e.desc == entry.desc and e.name == entry.name then return end
     end
-    table.insert(gd.newsBuffer, 1, entry)
+    entry.ts = entry.ts or GH:GetTimestamp()
+    table.insert(gd.newsBuffer, entry)
+    table.sort(gd.newsBuffer, function(a, b)
+        return (a.ts or 0) > (b.ts or 0)
+    end)
     while #gd.newsBuffer > 50 do
         table.remove(gd.newsBuffer)
     end
