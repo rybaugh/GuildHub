@@ -116,6 +116,7 @@ local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
+initFrame:RegisterEvent("PLAYER_LOGOUT")
 initFrame:SetScript("OnEvent", function(_, event, addonName)
     if event == "ADDON_LOADED" and addonName == GH.ADDON_NAME then
         GH:Initialize()
@@ -143,6 +144,8 @@ initFrame:SetScript("OnEvent", function(_, event, addonName)
         if _guildActivated then
             initFrame:UnregisterEvent("GUILD_ROSTER_UPDATE")
         end
+    elseif event == "PLAYER_LOGOUT" then
+        GH.DB:SetLastLogoutTime(time())
     end
 end)
 

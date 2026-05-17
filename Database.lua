@@ -590,3 +590,39 @@ function DB:SaveGuildRecruitSettings(data)
     local gd = self:_GuildData()
     if gd then gd.guildRecruitSettings = data end
 end
+
+-- Last-logout timestamp (account-wide) -------------------------------------
+
+function DB:GetLastLogoutTime()
+    local db = sv()
+    if not db or not db.settings then return 0 end
+    return db.settings.lastLogoutTime or 0
+end
+
+function DB:SetLastLogoutTime(ts)
+    local db = sv()
+    if db and db.settings then
+        db.settings.lastLogoutTime = ts
+    end
+end
+
+-- Returns up to 500 messages (guildMessages + communityMessages) with ts > sinceTs,
+-- sorted ascending. Capped at 500 to bound the HIST_CHUNK burst size.
+function DB:GetMessagesSince(sinceTs)
+    local gd = self:_GuildData()
+    if not gd then return {} end
+    local out = {}
+    for _, m in ipairs(gd.guildMessages or {}) do
+        if (m.ts or 0) > sinceTs then out[#out + 1] = m end
+    end
+    for _, m in ipairs(gd.communityMessages or {}) do
+        if (m.ts or 0) > sinceTs then out[#out + 1] = m end
+    end
+    table.sort(out, function(a, b) return (a.ts or 0) < (b.ts or 0) end)
+    if #out > 500 then
+        local trimmed = {}
+        for i = #out - 499, #out do trimmed[#trimmed + 1] = out[i] end
+        return trimmed
+    end
+    return out
+end
