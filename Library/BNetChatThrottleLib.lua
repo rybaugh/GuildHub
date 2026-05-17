@@ -320,7 +320,7 @@ end
 function BNetChatThrottleLib:Despool(Prio)
 	local ring = Prio.Ring
 	while ring.pos and Prio.avail > ring.pos[1].nSize do
-		try(function()
+		pcall(function()
 			local msg = table_remove(ring.pos, 1)
 			if not ring.pos[1] then  -- did we remove last msg in this pipe?
 				local pipe = Prio.Ring.pos
@@ -352,19 +352,18 @@ function BNetChatThrottleLib:Despool(Prio)
 				end
 				-- USER CALLBACK MAY ERROR
 			end
-		end).
-		catch(function() end)
+		end)
 	end
 end
 
 function BNetChatThrottleLib:Purge()
 	for prioname, Prio in pairs(self.Prio) do
-		try(function()
+		pcall(function()
 			local pipe = Prio.Ring.pos
 			Prio.Ring:Remove(pipe)
 			Prio.ByName[pipe.name] = nil
 			DelPipe(pipe)
-		end).catch(function() end)	
+		end)
 	end
 end
 

@@ -54,6 +54,8 @@ BNC._peers     = {}   -- [gameID : string] = {name, guild, lastSeen}
 BNC._seen      = {}   -- [key] = timestamp — keys of fully-assembled messages (dedup)
 BNC._fragments = {}   -- [key] = {total=N, received=count, [1]=frag, ...}
 BNC._chanNum   = nil  -- WoW channel slot number, set after JoinTemporaryChannel
+
+local SEEN_TTL = 120   -- seconds before a seen-key or fragment bucket is discarded
 BNC._pendingHistReq = nil   -- requestId we sent; nil once fulfilled or no history needed
 BNC._histChunks     = {}    -- [requestId] = {total=N, received=0, [1..N]=fields}
 
@@ -122,9 +124,15 @@ local function ParseHeader(raw)
 end
 
 -- ── Low-level send ────────────────────────────────────────────────────────────
-local function BNSend(gameID, wire)
-    local fn = rawget(_G, "BNSendGameData")
-    if fn then pcall(fn, tonumber(gameID), PREFIX_BNET, wire) end
+local function BNSend(gameID, wire, prio)
+    local ctl = rawget(_G, "BNetChatThrottleLib")
+    if ctl then
+        pcall(ctl.BNSendGameData, ctl, prio or PRIO_META,
+              PREFIX_BNET, wire, "WHISPER", tonumber(gameID))
+    else
+        local fn = rawget(_G, "BNSendGameData")
+        if fn then pcall(fn, tonumber(gameID), PREFIX_BNET, wire) end
+    end
 end
 
 local function ChanSend(wire, prio)
@@ -144,17 +152,17 @@ local function GuildSend(wire, prio)
     end
 end
 
-local function SendToPeers(frags)
+local function SendToPeers(frags, prio)
     local guildBroadcastDone = false
     for gid, peer in pairs(BNC._peers) do
         if (peer.protocol or "BNET") == "GUILD" then
             -- One guild broadcast covers all guild-channel peers simultaneously
             if not guildBroadcastDone then
-                for _, f in ipairs(frags) do GuildSend(f, PRIO_LIVE) end
+                for _, f in ipairs(frags) do GuildSend(f, prio or PRIO_LIVE) end
                 guildBroadcastDone = true
             end
         else
-            for _, f in ipairs(frags) do BNSend(gid, f) end
+            for _, f in ipairs(frags) do BNSend(gid, f, prio or PRIO_LIVE) end
         end
     end
 end
@@ -193,7 +201,7 @@ function BNC:PingAllFriends()
     -- BNet: whisper each online WoW friend
     local targets = OnlineWoWGameIDs()
     for _, gid in ipairs(targets) do
-        for _, f in ipairs(frags) do BNSend(gid, f) end
+        for _, f in ipairs(frags) do BNSend(gid, f, PRIO_META) end
     end
 
     -- Guild channel: broadcast for same-realm guildmates (no BNet required)
@@ -206,7 +214,7 @@ local function ReplyPong(gameID)
     local payload = table.concat({ MSG_PONG, GH:GetPlayerName(), GH:GetGuildName() }, SEP)
     local frags   = Fragment(payload, NewKey(), PACKET_BN)
     if gameID then
-        for _, f in ipairs(frags) do BNSend(gameID, f) end
+        for _, f in ipairs(frags) do BNSend(gameID, f, PRIO_META) end
     else
         -- Received via guild channel; reply on the same channel
         for _, f in ipairs(frags) do GuildSend(f, PRIO_META) end
@@ -227,7 +235,7 @@ function BNC:_RequestHistory(peer)
         -- Direct BNet whisper — only that peer receives it
         for gid, p in pairs(BNC._peers) do
             if p.name == peer.name then
-                for _, f in ipairs(frags) do BNSend(gid, f) end
+                for _, f in ipairs(frags) do BNSend(gid, f, PRIO_HIST) end
                 break
             end
         end
@@ -245,7 +253,7 @@ end
 local function AcceptFragment(key, n, total, body)
     local bucket = BNC._fragments[key]
     if not bucket then
-        bucket = { total = total, received = 0 }
+        bucket = { total = total, received = 0, _ts = time() }
         BNC._fragments[key] = bucket
     end
     if not bucket[n] then
@@ -313,6 +321,10 @@ local function DispatchPayload(payload, protocol, senderGameID)
         local guildName = fields[3]
         local text      = fields[4]
         local ts        = tonumber(fields[5]) or GH:GetTimestamp()
+
+        sender    = (sender    or ""):sub(1, 64)
+        guildName = (guildName or ""):sub(1, 64)
+        text      = (text      or ""):sub(1, 512)
 
         if math.abs(time() - ts) > STALE_SECS then return end
         if sender == GH:GetPlayerName() then return end
@@ -405,7 +417,7 @@ local function DispatchPayload(payload, protocol, senderGameID)
 
             -- Prefer BNet whisper back to requester; fall back to guild channel
             if senderGameID then
-                for _, f in ipairs(frags) do BNSend(senderGameID, f) end
+                for _, f in ipairs(frags) do BNSend(senderGameID, f, PRIO_HIST) end
             else
                 for _, f in ipairs(frags) do GuildSend(f, PRIO_HIST) end
             end
@@ -444,12 +456,16 @@ local function DispatchPayload(payload, protocol, senderGameID)
                         parts[#parts + 1] = v
                     end
                     if #parts >= 3 then
+                        local entryTs     = tonumber(parts[1]) or 0
+                        local entrySender = (parts[2] or ""):sub(1, 64)
+                        local entryText   = (parts[3] or ""):sub(1, 512)
+                        local entryLabel  = (parts[4] or ""):sub(1, 64)
                         local entry = {
-                            ts          = tonumber(parts[1]) or 0,
-                            sender      = parts[2],
-                            text        = parts[3],
-                            sourceLabel = parts[4] or "",
-                            communityId = "bnet:" .. (parts[4] or ""),
+                            ts          = entryTs,
+                            sender      = entrySender,
+                            text        = entryText,
+                            sourceLabel = entryLabel,
+                            communityId = "bnet:" .. entryLabel,
                             isBNet      = true,
                         }
                         local isNew = GH.DB:AddCommunityMessage(entry)
@@ -597,6 +613,21 @@ function BNC:Initialize()
 
     -- Probe all online BNet friends to identify GuildHub peers.
     C_Timer.After(PING_DELAY, function() BNC:PingAllFriends() end)
+
+    -- Periodically evict stale dedup and fragment entries to bound memory growth.
+    C_Timer.NewTicker(60, function()
+        local cutoff = time() - SEEN_TTL
+        for k, ts in pairs(BNC._seen) do
+            if type(ts) == "number" and ts < cutoff then
+                BNC._seen[k] = nil
+            end
+        end
+        for k, bucket in pairs(BNC._fragments) do
+            if bucket._ts and bucket._ts < cutoff then
+                BNC._fragments[k] = nil
+            end
+        end
+    end)
 
     GH:Debug("BNetChat", "Initialized")
 end
