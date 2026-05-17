@@ -218,7 +218,6 @@ function BNC:_RequestHistory(peer)
     local reqId   = NewKey()
     local sinceTs = GH.DB:GetLastLogoutTime()
     BNC._pendingHistReq = reqId
-    BNC._seen[reqId]    = time()   -- pre-register so our own echo is ignored
 
     local payload = table.concat(
         { MSG_HIST_REQ, reqId, tostring(sinceTs), peer.name }, SEP)
@@ -463,6 +462,11 @@ local function DispatchPayload(payload, protocol, senderGameID)
                         end
                     end
                 end
+            end
+            if Chat and inserted > 0 then
+                table.sort(Chat.communityMsgs, function(a, b)
+                    return (a.ts or 0) < (b.ts or 0)
+                end)
             end
             GH:Debug("BNetChat", "History sync complete: %d new messages inserted", inserted)
             if inserted > 0 and GH.UI and GH.UI.OnChatMessage then
