@@ -24,38 +24,23 @@ local OP = {
     SYNC_CHUNK   = "PP_SYN",
 }
 
--- ── Outbound queue & throttle ─────────────────────────────────────────────────
+-- ── Outbound send with throttle ──────────────────────────────────────────────
 
-local _outQueue   = {}
-local _queueFrame = nil
-
-local function _FlushQueue()
-    if #_outQueue == 0 then return end
-    local msg = table.remove(_outQueue, 1)
-    if GH:IsInGuild() then
+local function _Send(msg)
+    if #msg > 250 then return end
+    if not GH:IsInGuild() then return end
+    local ctl = rawget(_G, "BNetChatThrottleLib")
+    if ctl then
+        pcall(ctl.SendAddonMessage, ctl, "NORMAL",
+              GH.ADDON_PREFIX, msg, "GUILD")
+    else
         pcall(C_ChatInfo.SendAddonMessage, GH.ADDON_PREFIX, msg, "GUILD")
     end
-end
-
-local function _Enqueue(msg)
-    if #msg > 250 then return end  -- safety guard
-    _outQueue[#_outQueue + 1] = msg
 end
 
 -- ── Initialisation ────────────────────────────────────────────────────────────
 
 function ProfileSync:Initialize()
-    -- Throttle frame: flush one message every 0.5 s
-    _queueFrame = CreateFrame("Frame")
-    local elapsed = 0
-    _queueFrame:SetScript("OnUpdate", function(_, dt)
-        elapsed = elapsed + dt
-        if elapsed >= 0.5 then
-            elapsed = 0
-            _FlushQueue()
-        end
-    end)
-
     -- Listen for incoming messages (shares the CHAT_MSG_ADDON frame with other modules)
     local listenFrame = CreateFrame("Frame")
     listenFrame:RegisterEvent("CHAT_MSG_ADDON")
@@ -144,17 +129,17 @@ end
 
 function ProfileSync:BroadcastJoinDate(name, ts, verified)
     if not _CanPush() then return end
-    _Enqueue(GH:Encode(OP.JOIN_DATE, name, tostring(ts), verified and "1" or "0"))
+    _Send(GH:Encode(OP.JOIN_DATE, name, tostring(ts), verified and "1" or "0"))
 end
 
 function ProfileSync:BroadcastRankHistory(name, rankName, rankIndex, ts)
     if not _CanPush() then return end
-    _Enqueue(GH:Encode(OP.RANK_HIST, name, rankName, tostring(rankIndex), tostring(ts)))
+    _Send(GH:Encode(OP.RANK_HIST, name, rankName, tostring(rankIndex), tostring(ts)))
 end
 
 function ProfileSync:BroadcastBirthday(name, month, day, year)
     if not _CanPush() then return end
-    _Enqueue(GH:Encode(OP.BIRTHDAY, name, tostring(month), tostring(day), tostring(year or 0)))
+    _Send(GH:Encode(OP.BIRTHDAY, name, tostring(month), tostring(day), tostring(year or 0)))
 end
 
 function ProfileSync:BroadcastAltGroup(groupId, group)
@@ -164,26 +149,26 @@ function ProfileSync:BroadcastAltGroup(groupId, group)
         args[#args + 1] = alt
     end
     local msg = GH:Encode(unpack(args))
-    if #msg <= 250 then _Enqueue(msg) end
+    if #msg <= 250 then _Send(msg) end
 end
 
 function ProfileSync:BroadcastCustomNote(name, note, editor, ts)
     if not _CanPush() then return end
-    _Enqueue(GH:Encode(OP.CUSTOM_NOTE, name, note or "", editor or "", tostring(ts)))
+    _Send(GH:Encode(OP.CUSTOM_NOTE, name, note or "", editor or "", tostring(ts)))
 end
 
 function ProfileSync:BroadcastBan(name, reason, bannedBy, ts)
     if not GH:IsOfficer() then return end
-    _Enqueue(GH:Encode(OP.BAN, name, reason or "", bannedBy or "", tostring(ts)))
+    _Send(GH:Encode(OP.BAN, name, reason or "", bannedBy or "", tostring(ts)))
 end
 
 function ProfileSync:BroadcastUnban(name, ts)
     if not GH:IsOfficer() then return end
-    _Enqueue(GH:Encode(OP.UNBAN, name, tostring(ts)))
+    _Send(GH:Encode(OP.UNBAN, name, tostring(ts)))
 end
 
 function ProfileSync:RequestSync()
-    _Enqueue(GH:Encode(OP.REQUEST, GH:GetPlayerName()))
+    _Send(GH:Encode(OP.REQUEST, GH:GetPlayerName()))
 end
 
 -- ── Full sync (chunked) ───────────────────────────────────────────────────────
@@ -205,7 +190,7 @@ function ProfileSync:SendFullSync()
             parts[#parts + 1] = entry.name .. ":" .. tostring(entry.ts) .. ":" .. (entry.v and "1" or "0")
         end
         local msg = GH:Encode(unpack(parts))
-        if #msg <= 250 then _Enqueue(msg) end
+        if #msg <= 250 then _Send(msg) end
         batch = {}
         count = 0
     end
