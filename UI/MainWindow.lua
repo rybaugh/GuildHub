@@ -51,6 +51,9 @@ function UI:CreateMainWindow()
             "GuildHubBanDialog", "GuildHubAddAltDialog",
             "GuildHubMacroDialog", "GuildHubExportDialog",
             "GuildHubBanListWindow", "GuildHubAddBanDialog", "GuildHubEditBanDialog",
+            -- Mouseover window is in UISpecialFrames; must be closed here or it
+            -- blocks the WoW game menu (CloseSpecialWindows returns non-nil).
+            "GuildHubMouseoverWindow",
         }
         for _, name in ipairs(orphans) do
             local f = rawget(_G, name)
@@ -579,7 +582,6 @@ function UI:CreateMainWindow()
         newsRows[rowI] = row
     end
     win.newsRows   = newsRows
-    win.newsBuffer = GH.DB:GetNewsBuffer()  -- persistent across sessions
 
     local newsEventFrame = CreateFrame("Frame")
     newsEventFrame:RegisterEvent("GUILD_NEWS_UPDATE")
