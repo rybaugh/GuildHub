@@ -480,11 +480,19 @@ function DB:AddNewsEntry(entry)
     local gd = self:_GuildData()
     if not gd or not entry or not entry.desc then return end
     gd.newsBuffer = gd.newsBuffer or {}
+    -- Deduplicate by name+desc: achievements are one-time events and repeated
+    -- identical items from the same player are noise in the 8-row sidebar.
     for _, e in ipairs(gd.newsBuffer) do
         if e.desc == entry.desc and e.name == entry.name then return end
     end
-    entry.ts = entry.ts or GH:GetTimestamp()
-    table.insert(gd.newsBuffer, entry)
+    local stored = {
+        name    = entry.name,
+        desc    = entry.desc,
+        iconTex = entry.iconTex,
+        rawLink = entry.rawLink,
+        ts      = entry.ts or GH:GetTimestamp(),
+    }
+    table.insert(gd.newsBuffer, stored)
     table.sort(gd.newsBuffer, function(a, b)
         return (a.ts or 0) > (b.ts or 0)
     end)
