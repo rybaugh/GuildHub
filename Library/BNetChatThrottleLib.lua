@@ -38,7 +38,7 @@ end
 BNetChatThrottleLib = _G.BNetChatThrottleLib  -- in case some addon does "local BNetChatThrottleLib" above us and we're copypasted (AceComm-2, sigh)
 local BNetChatThrottleLib = _G.BNetChatThrottleLib
 
-BNetChatThrottleLib.version = CTL_VERSION
+BNetChatThrottleLib.version = BCTL_VERSION
 
 
 
