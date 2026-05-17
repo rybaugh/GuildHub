@@ -221,6 +221,7 @@ function UI:RefreshEventsTab()
         titleLabel:SetPoint("TOPLEFT", btn, "TOPLEFT", 10, -8)
         titleLabel:SetWidth(ev.repeatType and 160 or 185)
         titleLabel:SetJustifyH("LEFT")
+        titleLabel:SetWordWrap(false)
         titleLabel:SetText(ev.title)
         titleLabel:SetTextColor(isPast and 0.45 or 1, isPast and 0.45 or 1, isPast and 0.45 or 1)
 
@@ -660,14 +661,13 @@ function UI:ShowEventCreateDialog()
     end
 
     -- Type
-    local typeLbl = Label("Type:", monthPicker, -8)
-    dlg.typeIdx   = 1
-    local typeBtn = S:Button(dlg, GH.Events.EVENT_TYPES[1], 174, 26)
-    typeBtn:SetPoint("TOPLEFT", typeLbl, "BOTTOMLEFT", 0, -4)
-    typeBtn:SetScript("OnClick", function()
-        dlg.typeIdx = (dlg.typeIdx % #GH.Events.EVENT_TYPES) + 1
-        typeBtn.label:SetText(GH.Events.EVENT_TYPES[dlg.typeIdx])
-    end)
+    local typeLbl  = Label("Type:", monthPicker, -8)
+    local typeOpts = {}
+    for _, t in ipairs(GH.Events.EVENT_TYPES) do
+        typeOpts[#typeOpts + 1] = { label = t, value = t }
+    end
+    local typeDd = S:Dropdown(dlg, typeOpts, 174, 26)
+    typeDd:SetPoint("TOPLEFT", typeLbl, "BOTTOMLEFT", 0, -4)
 
     -- Repeat
     local REPEAT_OPTS = {
@@ -677,16 +677,11 @@ function UI:ShowEventCreateDialog()
         { label = "Monthly",   value = "monthly"  },
     }
     local repeatLabel = S:FS(dlg, "OVERLAY")
-    repeatLabel:SetPoint("LEFT", typeBtn, "RIGHT", 10, 0)
+    repeatLabel:SetPoint("LEFT", typeDd, "RIGHT", 10, 0)
     repeatLabel:SetText("Repeat:")
     repeatLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
-    dlg.repeatIdx = 1
-    local repeatBtn = S:Button(dlg, REPEAT_OPTS[1].label, 110, 26)
-    repeatBtn:SetPoint("LEFT", repeatLabel, "RIGHT", 4, 0)
-    repeatBtn:SetScript("OnClick", function()
-        dlg.repeatIdx = (dlg.repeatIdx % #REPEAT_OPTS) + 1
-        repeatBtn.label:SetText(REPEAT_OPTS[dlg.repeatIdx].label)
-    end)
+    local repeatDd = S:Dropdown(dlg, REPEAT_OPTS, 110, 26)
+    repeatDd:SetPoint("LEFT", repeatLabel, "RIGHT", 4, 0)
 
     -- ── Host Team / Team-Only row ─────────────────────────────────────────────
     -- Build the team list at dialog creation time from whatever teams exist now.
@@ -700,7 +695,7 @@ function UI:ShowEventCreateDialog()
     local teamOpts = BuildTeamOpts()
 
     local hostLbl = S:FS(dlg, "OVERLAY")
-    hostLbl:SetPoint("TOPLEFT", typeBtn, "BOTTOMLEFT", 0, -8)
+    hostLbl:SetPoint("TOPLEFT", typeDd, "BOTTOMLEFT", 0, -8)
     hostLbl:SetText("Host Team:")
     hostLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
@@ -787,8 +782,8 @@ function UI:ShowEventCreateDialog()
         dayPicker.SetValues(BuildDays(dm, dyNum), false)
         dayPicker.SetIndex(math.min(dd, #BuildDays(dm, dyNum)))
         hourPicker.SetIndex(21); minPicker.SetIndex(1)
-        dlg.repeatIdx = 1; repeatBtn.label:SetText(REPEAT_OPTS[1].label)
-        dlg.typeIdx   = 1; typeBtn.label:SetText(GH.Events.EVENT_TYPES[1])
+        repeatDd:SetSelectedIndex(1)  -- TODO(Task3): update Create handler
+        typeDd:SetSelectedIndex(1)    -- TODO(Task3): update Create handler
         -- Refresh team list in case teams were added/removed since last open
         teamOpts = BuildTeamOpts()
         dlg.teamIdx = 1; teamBtn.label:SetText(teamOpts[1].label)
@@ -799,8 +794,8 @@ function UI:ShowEventCreateDialog()
 
     dlg.titleBox  = titleBox
     dlg.descBox   = descBox
-    dlg.typeBtn   = typeBtn
-    dlg.repeatBtn = repeatBtn
+    dlg.typeDd   = typeDd    -- TODO(Task3): update Create handler
+    dlg.repeatDd = repeatDd  -- TODO(Task3): update Create handler
     dlg.teamBtn   = teamBtn
 
     titleBox:SetFocus()
