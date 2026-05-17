@@ -49,6 +49,7 @@ local function GetMT()
     mt.promoteRules = mt.promoteRules or {}
     mt.demoteRules  = mt.demoteRules  or {}
     mt.ignored      = mt.ignored      or {}
+    mt.lastSeenMap  = mt.lastSeenMap  or {}
     return mt
 end
 
@@ -114,17 +115,22 @@ local function MyRankIndex()
 end
 
 local function GuildMemberList()
+    local mt    = GetMT()
+    local lsMap = mt and mt.lastSeenMap or {}
+    local now   = time()
     local out, total = {}, GetNumGuildMembers and GetNumGuildMembers() or 0
     for i = 1, total do
-        -- position 6 is zone (string) in Retail WoW — days-offline is not available
         local name, _, rankIndex, level, _, _, _, _, online =
             GetGuildRosterInfo(i)
         if name then
+            local short = name:match("^([^%-]+)") or name
+            if online then lsMap[short] = now end
             out[#out + 1] = {
-                name      = name:match("^([^%-]+)") or name,
-                rankIndex = rankIndex  or 0,
-                level     = level      or 0,
-                online    = online     or false,
+                name      = short,
+                rankIndex = rankIndex or 0,
+                level     = level     or 0,
+                online    = online    or false,
+                lastSeen  = lsMap[short],
             }
         end
     end
@@ -132,11 +138,14 @@ local function GuildMemberList()
 end
 
 local function MemberMatchesRule(m, rule)
-    -- ranks[rankIndex+1] = true  →  this rank is targeted
     if rule.ranks and not rule.ranks[m.rankIndex + 1] then return false end
-    if rule.useInactivity then
-        -- Retail WoW does not expose days-offline; filter by online status only
-        if m.online and not rule.kickActive then return false end
+    if rule.useInactivity and not rule.kickActive then
+        if m.online then return false end
+        if m.lastSeen then
+            local daysSince = (time() - m.lastSeen) / 86400
+            if daysSince < (rule.inactivityDays or 30) then return false end
+        end
+        -- No lastSeen recorded yet: member unseen since tracking began; treat as inactive
     end
     return true
 end
@@ -881,13 +890,6 @@ local function BuildMacroToolFrame()
     curActHdr:SetText("Current Actions")
     curActHdr:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
 
-    local limitNote = S:FS(t, "OVERLAY")
-    limitNote:SetPoint("TOPRIGHT", t, "TOPRIGHT", -14, ly)
-    limitNote:SetText("Due to limitations with macros a player\ncan only move 1 rank at a time.")
-    limitNote:SetTextColor(S.COLOR.RED[1], S.COLOR.RED[2], S.COLOR.RED[3])
-    limitNote:SetJustifyH("CENTER"); limitNote:SetWidth(RIGHT_W - 20)
-    limitNote:SetSpacing(2)
-
     local mNameHdr = S:FS(t, "OVERLAY")
     mNameHdr:SetPoint("TOPLEFT", t, "TOPLEFT", rx, ly - 20)
     mNameHdr:SetText("Name:")
@@ -898,9 +900,19 @@ local function BuildMacroToolFrame()
     mMacroHdr:SetText("Macro:")
     mMacroHdr:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
 
-    -- Current macro member scroll list
+    -- Warning shown below column headers for promote/demote tabs only
+    local limitNote = S:FS(t, "OVERLAY")
+    limitNote:SetPoint("TOPLEFT", t, "TOPLEFT", rx, ly - 40)
+    limitNote:SetText("Due to limitations with macros a player\ncan only move 1 rank at a time.")
+    limitNote:SetTextColor(S.COLOR.RED[1], S.COLOR.RED[2], S.COLOR.RED[3])
+    limitNote:SetJustifyH("CENTER"); limitNote:SetWidth(RIGHT_W - 20)
+    limitNote:SetSpacing(2)
+    limitNote:Hide()
+    t.limitNote = limitNote
+
+    -- Current macro member scroll list (top shifted down to clear the warning note)
     local macroSF = CreateFrame("ScrollFrame", nil, t, "UIPanelScrollFrameTemplate")
-    macroSF:SetPoint("TOPLEFT",     t, "TOPLEFT",  rx,             ly - 38)
+    macroSF:SetPoint("TOPLEFT",     t, "TOPLEFT",  rx,             ly - 74)
     macroSF:SetPoint("BOTTOMRIGHT", t, "TOPRIGHT",  -16,           ly - 38 - 220)
     local macroSC = CreateFrame("Frame", nil, macroSF)
     macroSC:SetSize(RIGHT_W - 36, 10)
@@ -921,6 +933,13 @@ local function BuildMacroToolFrame()
         t._batches  = nil
         t._batchIdx = 1
         ClearMacro()
+        for _, row in ipairs(t._macroPool) do row:Hide() end
+        t.macroContent:SetHeight(10)
+        macroStatusBtn.label:SetText("Macro is currently empty")
+        macroStatusBtn:Disable()
+        macroStatusBtn:SetAlpha(0.5)
+        t.buildBtn.label:SetText("Build Macro")
+        t.buildBtn:Enable(); t.buildBtn:SetAlpha(1)
         t:Refresh()
     end)
 
@@ -1187,6 +1206,8 @@ local function BuildMacroToolFrame()
     end
 
     function t:Refresh()
+        t.limitNote:SetShown(t._tab ~= TAB.KICK)
+
         -- Permissions
         local kOk, pOk, dOk = PermKick(), PermPromote(), PermDemote()
         local function PermColor(ok)

@@ -448,7 +448,7 @@ function Profiles:AddBirthdayToCalendar(name)
             C_Calendar.EventSetDescription("GuildHub: Happy birthday to " .. name .. "!")
             C_Calendar.EventSetDate(b.month, b.day, year)
             C_Calendar.EventSetTime(12, 0)
-            C_Calendar.AddEvent()
+            C_Calendar.EventSave()
         end)
     end
 end
@@ -467,7 +467,7 @@ function Profiles:AddAnniversaryToCalendar(name)
             C_Calendar.EventSetDescription("GuildHub: " .. name .. " has been a member for " .. years .. " year(s)!")
             C_Calendar.EventSetDate(jt.month, jt.day, year)
             C_Calendar.EventSetTime(12, 0)
-            C_Calendar.AddEvent()
+            C_Calendar.EventSave()
         end)
     end
 end

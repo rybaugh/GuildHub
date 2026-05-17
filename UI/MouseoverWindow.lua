@@ -72,6 +72,12 @@ local function BuildWindow()
     -- ESC closes/unlocks
     tinsert(UISpecialFrames, "GuildHubMouseoverWindow")
 
+    win:SetScript("OnHide", function()
+        _locked   = false
+        _lockName = nil
+        win.lockHint:SetAlpha(0)
+    end)
+
     win:SetScript("OnMouseDown", function()
         if _locked and _lockName then
             _locked   = false

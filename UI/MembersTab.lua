@@ -18,7 +18,7 @@ local COLS = {
     { label = "Zone",     x = 345, w = 110 },
     { label = "Team",     x = 460, w = 70  },
     { label = "Note",     x = 535, w = 110 },
-    { label = "Personal", x = 650, w = 108 },
+    { label = "Personal", x = 650, w = 160 },
 }
 
 local ROW_POOL    = {}
@@ -312,19 +312,22 @@ local function GetOrCreateRow(index, parent)
 
     local noteText = S:FS(row, "OVERLAY")
     noteText:SetPoint("LEFT", row, "LEFT", COLS[7].x, 0)
-    noteText:SetWidth(COLS[7].w)
+    noteText:SetSize(COLS[7].w, S.ROW_H)
     noteText:SetJustifyH("LEFT")
     noteText:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     row.noteText = noteText
 
     local personalBtn = CreateFrame("Button", nil, row)
-    personalBtn:SetPoint("LEFT", row, "LEFT", COLS[8].x, 0)
-    personalBtn:SetSize(COLS[8].w, S.ROW_H - 4)
+    personalBtn:SetPoint("TOPLEFT",    row, "TOPLEFT",    COLS[8].x,  2)
+    personalBtn:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", COLS[8].x, -2)
+    personalBtn:SetWidth(COLS[8].w)
     personalBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     local personalText = S:FS(personalBtn, "OVERLAY")
-    personalText:SetPoint("LEFT", personalBtn, "LEFT", 0, 0)
+    personalText:SetPoint("TOPLEFT", personalBtn, "TOPLEFT", 0, -2)
     personalText:SetWidth(COLS[8].w)
+    personalText:SetWordWrap(true)
     personalText:SetJustifyH("LEFT")
+    personalText:SetJustifyV("TOP")
     personalText:SetTextColor(0.65, 0.75, 0.9)
     row.personalBtn  = personalBtn
     row.personalText = personalText
@@ -578,13 +581,13 @@ function UI:RefreshMembersTab()
     for _, r in ipairs(activeRows) do r:Hide() end
     activeRows = {}
 
-    local totalH = 0
+    local yOffset = 0
+    local totalH  = 0
     for i, member in ipairs(members) do
         local row = GetOrCreateRow(i, content)
         row:SetParent(content)
-        row:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, -(i - 1) * S.ROW_H)
-        row:SetPoint("TOPRIGHT", content, "TOPRIGHT",  0, -(i - 1) * S.ROW_H)
-        row:SetHeight(S.ROW_H)
+        row:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, -yOffset)
+        row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -yOffset)
         row:Show()
 
         local isSelected = (member.name == UI._selectedMemberName)
@@ -735,6 +738,15 @@ function UI:RefreshMembersTab()
         else
             row.personalText:SetText("|cff333355✎ Add note|r")
         end
+
+        local strH = row.personalText:GetStringHeight()
+        local rowH = math.max(S.ROW_H, strH + 10)
+        row:SetHeight(rowH)
+        row.classBar:SetHeight(rowH - 4)
+        if row.classGlow then row.classGlow:SetHeight(rowH) end
+        yOffset = yOffset + rowH
+        totalH  = totalH + rowH
+
         do
             local capturedMember = member
             row.personalBtn:SetScript("OnClick", function(_, btn)
@@ -755,7 +767,6 @@ function UI:RefreshMembersTab()
 
         row.memberData = member
         activeRows[#activeRows + 1] = row
-        totalH = totalH + S.ROW_H
     end
 
     content:SetHeight(math.max(totalH, 10))
@@ -773,50 +784,50 @@ function UI:ShowPersonalNoteDialog(targetName)
         dlg:SetSize(380, 130)
         dlg:SetFrameStrata("DIALOG")
         S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
+
+        local title = S:FS(dlg, "OVERLAY", "normal")
+        title:SetPoint("TOP", dlg, "TOP", 0, -12)
+        title:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+        dlg._title = title
+
+        local subLabel = S:FS(dlg, "OVERLAY")
+        subLabel:SetPoint("TOP", title, "BOTTOM", 0, -2)
+        subLabel:SetText("Only visible to you — never shared")
+        subLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+        local eb = S:EditBox(dlg, 340, 26, 200)
+        eb:SetPoint("TOP", subLabel, "BOTTOM", 0, -8)
+        dlg._eb = eb
+
+        local okBtn = S:Button(dlg, "Save", 80, 26)
+        okBtn:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 30, 10)
+        dlg._okBtn = okBtn
+
+        local cancelBtn = S:DangerButton(dlg, "Cancel", 80, 26)
+        cancelBtn:SetPoint("BOTTOMRIGHT", dlg, "BOTTOMRIGHT", -30, 10)
+        cancelBtn:SetScript("OnClick", function() dlg:Hide() end)
     end
-    dlg:SetPoint("CENTER")
-    dlg:Show()
 
-    for i = dlg:GetNumChildren(), 1, -1 do
-        select(i, dlg:GetChildren()):Hide()
-    end
-
-    local title = S:FS(dlg, "OVERLAY", "normal")
-    title:SetPoint("TOP", dlg, "TOP", 0, -12)
-    title:SetText("Private note about |cffffd700" .. targetName .. "|r")
-    title:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
-    title:Show()
-
-    local subLabel = S:FS(dlg, "OVERLAY")
-    subLabel:SetPoint("TOP", title, "BOTTOM", 0, -2)
-    subLabel:SetText("Only visible to you — never shared")
-    subLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
-    subLabel:Show()
-
-    local eb = S:EditBox(dlg, 340, 26, 200)
-    eb:SetPoint("TOP", subLabel, "BOTTOM", 0, -8)
-    eb:SetText(current)
-    eb:SetFocus()
-    eb:Show()
-
-    local okBtn = S:Button(dlg, "Save", 80, 26)
-    okBtn:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 30, 10)
-    okBtn:Show()
-
-    local cancelBtn = S:DangerButton(dlg, "Cancel", 80, 26)
-    cancelBtn:SetPoint("BOTTOMRIGHT", dlg, "BOTTOMRIGHT", -30, 10)
-    cancelBtn:Show()
+    dlg._title:SetText("Private note about |cffffd700" .. targetName .. "|r")
+    dlg._eb:SetText(current)
+    dlg._eb:SetFocus()
 
     local function Save()
-        local note = eb:GetText():match("^%s*(.-)%s*$")
+        local note = dlg._eb:GetText():match("^%s*(.-)%s*$")
         GH.GuildData:SetPersonalNote(targetName, note)
         dlg:Hide()
         UI:RefreshMembersTab()
+        local pp = UI.ProfilePanel
+        if pp and pp:IsShown() and pp.currentName == targetName and pp.personalNoteFS then
+            pp.personalNoteFS:SetText(note ~= "" and note or "|cff888888No personal note|r")
+        end
     end
 
-    okBtn:SetScript("OnClick", Save)
-    cancelBtn:SetScript("OnClick", function() dlg:Hide() end)
-    eb:SetScript("OnEnterPressed", function() Save() end)
+    dlg._okBtn:SetScript("OnClick", Save)
+    dlg._eb:SetScript("OnEnterPressed", function() Save() end)
+
+    dlg:SetPoint("CENTER")
+    dlg:Show()
 end
 
 function UI:ShowTeamAssignDialog(memberName)

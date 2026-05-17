@@ -118,12 +118,21 @@ function UI:CreateTeamsTab(parent)
     frame.membersBtn = membersBtn
     frame.inviteBtn  = inviteBtn
 
-    -- Tab container (fills left portion of strip, clips overflow)
-    local tabArea = CreateFrame("Frame", nil, tabStrip)
-    tabArea:SetPoint("TOPLEFT",    tabStrip,  "TOPLEFT",    2, 0)
-    tabArea:SetPoint("BOTTOMLEFT", tabStrip,  "BOTTOMLEFT", 2, 0)
-    tabArea:SetPoint("RIGHT",      inviteBtn, "LEFT", -8, 0)
-    tabArea:SetClipsChildren(true)
+    -- Tab container (fills left portion of strip, horizontal scroll)
+    local tabScrollFrame = CreateFrame("ScrollFrame", nil, tabStrip)
+    tabScrollFrame:SetPoint("TOPLEFT",    tabStrip,  "TOPLEFT",    2, 0)
+    tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip,  "BOTTOMLEFT", 2, 0)
+    tabScrollFrame:SetPoint("RIGHT",      inviteBtn, "LEFT", -8, 0)
+    tabScrollFrame:EnableMouseWheel(true)
+    tabScrollFrame:SetScript("OnMouseWheel", function(sf, delta)
+        local max = sf:GetHorizontalScrollRange()
+        sf:SetHorizontalScroll(math.max(0, math.min(max, sf:GetHorizontalScroll() - delta * 80)))
+    end)
+    frame.tabScrollFrame = tabScrollFrame
+
+    local tabArea = CreateFrame("Frame", nil, tabScrollFrame)
+    tabArea:SetHeight(TAB_H)
+    tabScrollFrame:SetScrollChild(tabArea)
     frame.tabArea = tabArea
 
     -- ── Team roster sidebar ───────────────────────────────────────────────────
@@ -426,6 +435,30 @@ function UI:RefreshTeamsGroupList()
         end)
 
         xOff = xOff + tabW
+    end
+
+    tabArea:SetWidth(math.max(xOff, 1))
+
+    -- Scroll to reveal the selected tab if it's out of view
+    if selected and frame.tabScrollFrame then
+        C_Timer.After(0, function()
+            local sf  = frame.tabScrollFrame
+            local sfW = sf:GetWidth()
+            if sfW <= 0 then return end
+            local selX, selW = 0, 0
+            local xCheck = 0
+            for _, g in ipairs(GH.Groups:GetAll()) do
+                local tw = math.max(100, math.min(200, #g.name * 7 + 70 + (g.pending and 60 or 0)))
+                if g.id == selected then selX = xCheck; selW = tw; break end
+                xCheck = xCheck + tw
+            end
+            local scroll = sf:GetHorizontalScroll()
+            if selX < scroll then
+                sf:SetHorizontalScroll(selX)
+            elseif selX + selW > scroll + sfW then
+                sf:SetHorizontalScroll(selX + selW - sfW)
+            end
+        end)
     end
 end
 

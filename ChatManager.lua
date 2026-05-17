@@ -582,8 +582,11 @@ function Chat:GetChannels()
         out[#out + 1] = { id = OFFICER_ID, name = "Officer", isOfficer = true }
     end
     local custom = {}
+    local myName = GH:GetPlayerName()
     for id, ch in pairs(GH.DB:GetChats()) do
-        custom[#custom + 1] = { id = id, name = ch.name, members = ch.members }
+        if Chat:IsMember(id, myName) then
+            custom[#custom + 1] = { id = id, name = ch.name, members = ch.members }
+        end
     end
     table.sort(custom, function(a, b) return a.name < b.name end)
     for _, ch in ipairs(custom) do out[#out + 1] = ch end

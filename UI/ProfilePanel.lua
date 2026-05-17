@@ -207,7 +207,7 @@ function UI:CreateProfilePanel(parent)
         self.noteBox:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y - 2)
         y = y - 68
         self.noteCounter:ClearAllPoints()
-        self.noteCounter:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, y + 4)
+        self.noteCounter:SetPoint("BOTTOMRIGHT", self.noteBox, "BOTTOMRIGHT", -4, 4)
         placeBtn(self.saveNoteBtn, 24)
 
         -- Alt / Main
