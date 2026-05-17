@@ -264,6 +264,174 @@ function S:EditBox(parent, w, h, maxLetters)
     return eb
 end
 
+-- ── Dropdown selector ─────────────────────────────────────────────────────
+-- options: array of { label = string, value = any }
+-- Returns a button-like frame. Interface:
+--   .GetIndex()          → current 1-based index
+--   .GetValue()          → options[idx].value
+--   .GetLabel()          → options[idx].label
+--   .SetOptions(newOpts) → replace list, reset to index 1
+--   .Reset()             → reset to index 1
+--   .onChange            → optional function(idx, value) fired on selection
+function S:Dropdown(parent, options, w, h)
+    w = w or 174
+    h = h or 26
+
+    local current = 1
+    local opts    = options
+
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetSize(w, h)
+
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 0.82)
+    btn.bg = bg
+
+    local shimmer = btn:CreateTexture(nil, "ARTWORK")
+    shimmer:SetPoint("TOPLEFT")
+    shimmer:SetPoint("TOPRIGHT")
+    shimmer:SetHeight(math.max(1, math.floor(h * 0.35)))
+    local sok = pcall(function()
+        shimmer:SetGradient("VERTICAL",
+            CreateColor(1, 1, 1, 0.08), CreateColor(1, 1, 1, 0))
+    end)
+    if not sok then shimmer:SetColorTexture(1, 1, 1, 0.05) end
+
+    local label = btn:CreateFontString(nil, "OVERLAY")
+    label:SetFontObject(S.FontSmall)
+    label:SetPoint("LEFT",  btn, "LEFT",   8,   0)
+    label:SetPoint("RIGHT", btn, "RIGHT", -20,  0)
+    label:SetJustifyH("LEFT")
+    label:SetTextColor(1, 1, 1, 1)
+    btn.label = label
+
+    local chevron = btn:CreateFontString(nil, "OVERLAY")
+    chevron:SetFontObject(S.FontSmall)
+    chevron:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
+    chevron:SetText("\226\150\190")  -- ▾ (UTF-8 bytes: E2 96 BE)
+    chevron:SetTextColor(1, 1, 1, 0.65)
+
+    btn:SetScript("OnEnter", function(self)
+        self.bg:SetColorTexture(0.52, 0.66, 1.00, 0.95)
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self.bg:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 0.82)
+    end)
+
+    -- Popup (UIParent-parented so it floats above the dialog)
+    local popup = CreateFrame("Frame", nil, UIParent)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetFrameLevel(10)
+    popup:SetClampedToScreen(true)
+    popup:Hide()
+
+    -- Border layer (drawn first so bg sits inside it)
+    local popupBorder = popup:CreateTexture(nil, "BORDER")
+    popupBorder:SetAllPoints()
+    popupBorder:SetColorTexture(
+        S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.7)
+
+    local popupBg = popup:CreateTexture(nil, "BACKGROUND")
+    popupBg:SetPoint("TOPLEFT",     1, -1)
+    popupBg:SetPoint("BOTTOMRIGHT", -1,  1)
+    popupBg:SetColorTexture(
+        S.COLOR.INPUT_BG[1], S.COLOR.INPUT_BG[2], S.COLOR.INPUT_BG[3], 1)
+
+    -- Intercept: full-screen invisible frame at DIALOG-9, closes popup on outside click
+    local intercept = CreateFrame("Frame", nil, UIParent)
+    intercept:SetAllPoints(UIParent)
+    intercept:SetFrameStrata("DIALOG")
+    intercept:SetFrameLevel(9)
+    intercept:EnableMouse(true)
+    intercept:Hide()
+    intercept:SetScript("OnMouseDown", function()
+        popup:Hide()
+        intercept:Hide()
+    end)
+
+    local ROW_H = 22
+    local rows  = {}
+
+    local function Refresh()
+        label:SetText(opts[current] and opts[current].label or "")
+    end
+
+    local function RebuildRows()
+        for _, r in ipairs(rows) do r:Hide() end
+        rows = {}
+        popup:SetSize(w, ROW_H * #opts)
+        for i, opt in ipairs(opts) do
+            local row = CreateFrame("Button", nil, popup)
+            row:SetPoint("TOPLEFT",  popup, "TOPLEFT",  0, -(i - 1) * ROW_H)
+            row:SetPoint("TOPRIGHT", popup, "TOPRIGHT", 0, -(i - 1) * ROW_H)
+            row:SetHeight(ROW_H)
+
+            local rowBg = row:CreateTexture(nil, "BACKGROUND")
+            rowBg:SetAllPoints()
+            rowBg:SetColorTexture(0, 0, 0, 0)
+
+            local rowLabel = row:CreateFontString(nil, "OVERLAY")
+            rowLabel:SetFontObject(S.FontSmall)
+            rowLabel:SetPoint("LEFT",  row, "LEFT",   8, 0)
+            rowLabel:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+            rowLabel:SetJustifyH("LEFT")
+            rowLabel:SetText(opt.label)
+            rowLabel:SetTextColor(1, 1, 1, 1)
+
+            row:SetScript("OnEnter", function()
+                rowBg:SetColorTexture(
+                    S.COLOR.NAV_ACTIVE[1], S.COLOR.NAV_ACTIVE[2], S.COLOR.NAV_ACTIVE[3], 0.6)
+            end)
+            row:SetScript("OnLeave", function()
+                rowBg:SetColorTexture(0, 0, 0, 0)
+            end)
+
+            local capturedIdx = i
+            row:SetScript("OnClick", function()
+                current = capturedIdx
+                Refresh()
+                popup:Hide()
+                intercept:Hide()
+                if btn.onChange then btn.onChange(current, opts[current].value) end
+            end)
+
+            rows[i] = row
+        end
+    end
+
+    RebuildRows()
+    Refresh()
+
+    btn:SetScript("OnClick", function()
+        if popup:IsShown() then
+            popup:Hide()
+            intercept:Hide()
+        else
+            popup:ClearAllPoints()
+            popup:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -2)
+            popup:Show()
+            intercept:Show()
+        end
+    end)
+
+    btn.GetIndex   = function() return current end
+    btn.GetValue   = function() return opts[current] and opts[current].value end
+    btn.GetLabel   = function() return opts[current] and opts[current].label or "" end
+    btn.SetOptions = function(newOpts)
+        opts    = newOpts
+        current = 1
+        RebuildRows()
+        Refresh()
+    end
+    btn.Reset = function()
+        current = 1
+        Refresh()
+    end
+
+    return btn
+end
+
 -- ── Scrollable read-only text area ───────────────────────────────────────
 function S:ScrollText(parent, w, h)
     local sf = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
