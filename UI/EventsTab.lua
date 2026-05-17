@@ -686,9 +686,9 @@ function UI:ShowEventCreateDialog()
     -- ── Host Team / Team-Only row ─────────────────────────────────────────────
     -- Build the team list at dialog creation time from whatever teams exist now.
     local function BuildTeamOpts()
-        local opts = { { label = "All Guild", id = nil } }
+        local opts = { { label = "All Guild", value = nil } }
         for _, t in ipairs(GH.Groups:GetAll()) do
-            opts[#opts + 1] = { label = t.name, id = t.id }
+            opts[#opts + 1] = { label = t.name, value = t.id }
         end
         return opts
     end
@@ -699,17 +699,12 @@ function UI:ShowEventCreateDialog()
     hostLbl:SetText("Host Team:")
     hostLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
-    dlg.teamIdx = 1
-    local teamBtn = S:Button(dlg, teamOpts[1].label, 174, 26)
-    teamBtn:SetPoint("TOPLEFT", hostLbl, "BOTTOMLEFT", 0, -4)
-    teamBtn:SetScript("OnClick", function()
-        dlg.teamIdx = (dlg.teamIdx % #teamOpts) + 1
-        teamBtn.label:SetText(teamOpts[dlg.teamIdx].label)
-    end)
+    local teamDd = S:Dropdown(dlg, teamOpts, 174, 26)
+    teamDd:SetPoint("TOPLEFT", hostLbl, "BOTTOMLEFT", 0, -4)
 
-    -- "Team Only" ON/OFF toggle (shown inline to the right of the team button)
+    -- "Team Only" ON/OFF toggle (shown inline to the right of the team dropdown)
     local teamOnlyLbl = S:FS(dlg, "OVERLAY")
-    teamOnlyLbl:SetPoint("LEFT", teamBtn, "RIGHT", 10, 0)
+    teamOnlyLbl:SetPoint("LEFT", teamDd, "RIGHT", 10, 0)
     teamOnlyLbl:SetText("Team Only:")
     teamOnlyLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
@@ -734,8 +729,8 @@ function UI:ShowEventCreateDialog()
         end
     end)
 
-    -- Description (anchors to teamBtn so the host-team row is between type and desc)
-    local descLbl = Label("Description (optional):", teamBtn, -8)
+    -- Description (anchors to teamDd so the host-team row is between type and desc)
+    local descLbl = Label("Description (optional):", teamDd, -8)
     local descBox = S:EditBox(dlg, 380, 60, 255)
     descBox:SetPoint("TOPLEFT", descLbl, "BOTTOMLEFT", 0, -4)
     descBox:SetHeight(60)
@@ -754,12 +749,11 @@ function UI:ShowEventCreateDialog()
             min   = tonumber(minPicker.GetValue())   or 0,
             sec   = 0,
         })
-        local selTeam = teamOpts[dlg.teamIdx]
         GH.Events:Create(evTitle, evDesc, ts,
             typeDd.GetValue(),
             repeatDd.GetValue(),
-            selTeam.id,
-            selTeam.id and dlg.teamOnly or false)
+            teamDd.GetValue(),
+            teamDd.GetValue() and dlg.teamOnly or false)
         dlg:Hide()
         UI:RefreshEventsTab()
     end)
@@ -786,7 +780,7 @@ function UI:ShowEventCreateDialog()
         typeDd.Reset()
         -- Refresh team list in case teams were added/removed since last open
         teamOpts = BuildTeamOpts()
-        dlg.teamIdx = 1; teamBtn.label:SetText(teamOpts[1].label)
+        teamDd.SetOptions(teamOpts)
         dlg.teamOnly = false
         tObg:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 0.5)
         tOlbl:SetText("OFF")
@@ -794,9 +788,9 @@ function UI:ShowEventCreateDialog()
 
     dlg.titleBox  = titleBox
     dlg.descBox   = descBox
-    dlg.typeDd   = typeDd
-    dlg.repeatDd = repeatDd
-    dlg.teamBtn   = teamBtn
+    dlg.typeDd    = typeDd
+    dlg.repeatDd  = repeatDd
+    dlg.teamDd    = teamDd
 
     titleBox:SetFocus()
 end
