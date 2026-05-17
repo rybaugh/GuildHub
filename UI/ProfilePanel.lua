@@ -190,7 +190,9 @@ function UI:CreateProfilePanel(parent)
 
         -- Join Date
         placeSection(self.joinDateHdr, self.joinDateLine)
-        placeFS(self.joinDateLabel, 16)
+        if self.joinDateLabel:IsShown() then
+            placeFS(self.joinDateLabel, 16)
+        end
         if self.setJoinDateBtn:IsShown() then
             placeBtn(self.setJoinDateBtn, 24)
         end
@@ -313,11 +315,11 @@ function UI:ShowProfilePanel(memberData)
     end)
 
     -- Join date
-    if profile.joinDate then
-        local verified = profile.joinDateVerified and "" or " |cff888888(est.)|r"
-        panel.joinDateLabel:SetText(GH.Profiles.FormatDate(profile.joinDate) .. verified)
+    if profile.joinDate and profile.joinDateVerified then
+        panel.joinDateLabel:SetText(GH.Profiles.FormatDate(profile.joinDate))
+        panel.joinDateLabel:Show()
     else
-        panel.joinDateLabel:SetText("|cff888888Unknown|r")
+        panel.joinDateLabel:Hide()
     end
 
     -- Set Join Date button
@@ -329,7 +331,7 @@ function UI:ShowProfilePanel(memberData)
 
     -- Rank history — single FontString, updated each time (no accumulation)
     local hist = profile.rankHistory or {}
-    if #hist == 0 then
+    if #hist <= 1 then
         panel.rankHistFS:SetText("|cff888888No history recorded|r")
     else
         local lines = {}

@@ -246,7 +246,7 @@ function UI:_BuildCSV(scopeSel, sep, fieldChecked, FIELDS)
                     elseif f.key == "class" then
                         v = m.class or ""
                     elseif f.key == "joinDate" then
-                        v = profile.joinDate and GH.Profiles.FormatDate(profile.joinDate) or ""
+                        v = (profile.joinDate and profile.joinDateVerified) and GH.Profiles.FormatDate(profile.joinDate) or ""
                     elseif f.key == "rankHist" then
                         local hist = profile.rankHistory or {}
                         if #hist > 0 then

@@ -492,12 +492,19 @@ end
 function Profiles:ReceiveRankHistory(name, rankName, rankIndex, ts, sender)
     local profile = GH.DB:GetPlayerProfile(name)
     local hist    = profile.rankHistory
-    -- Only add if this exact timestamp+rank isn't already in history
     for _, entry in ipairs(hist) do
         if entry.ts == ts and entry.rankName == rankName then return end
     end
     table.insert(hist, { rankName = rankName, rankIndex = rankIndex, ts = ts })
     table.sort(hist, function(a, b) return a.ts < b.ts end)
+    -- Strip consecutive same-rankName entries that spurious broadcasts can produce
+    local deduped = { hist[1] }
+    for i = 2, #hist do
+        if hist[i].rankName ~= deduped[#deduped].rankName then
+            deduped[#deduped + 1] = hist[i]
+        end
+    end
+    profile.rankHistory = deduped
     GH.DB:SavePlayerProfile(name, profile)
 end
 

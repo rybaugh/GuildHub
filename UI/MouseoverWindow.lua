@@ -186,9 +186,8 @@ local function PopulateWindow(win, name)
     Sep()
 
     -- Join date
-    if profile.joinDate then
-        local verified = profile.joinDateVerified and "" or " (est.)"
-        Row("Joined", GH.Profiles.FormatDate(profile.joinDate) .. verified)
+    if profile.joinDate and profile.joinDateVerified then
+        Row("Joined", GH.Profiles.FormatDate(profile.joinDate))
     end
 
     -- Last promotion

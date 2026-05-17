@@ -126,6 +126,7 @@ function ActivityLog:_OnRosterUpdate()
         _prevSnapshot = snap
         _initialised  = true
         self:_PruneSpuriousLoginEvents()
+        self:_PruneSpuriousRankHistory()
         return
     end
 
@@ -234,6 +235,26 @@ function ActivityLog:_PruneSpuriousLoginEvents()
         end
     end
     GH.DB:SetActivityLog(cleaned)
+end
+
+function ActivityLog:_PruneSpuriousRankHistory()
+    local profiles = GH.DB:GetAllPlayerProfiles()
+    for name, profile in pairs(profiles) do
+        local hist = profile.rankHistory
+        if type(hist) == "table" and #hist >= 2 then
+            table.sort(hist, function(a, b) return (a.ts or 0) < (b.ts or 0) end)
+            local pruned = { hist[1] }
+            for i = 2, #hist do
+                if hist[i].rankName ~= pruned[#pruned].rankName then
+                    pruned[#pruned + 1] = hist[i]
+                end
+            end
+            if #pruned ~= #hist then
+                profile.rankHistory = pruned
+                GH.DB:SavePlayerProfile(name, profile)
+            end
+        end
+    end
 end
 
 -- ── Public API ────────────────────────────────────────────────────────────────
