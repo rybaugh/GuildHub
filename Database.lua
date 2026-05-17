@@ -85,7 +85,7 @@ local GUILD_DEFAULTS = {
                                 --            isBanned, banReason, banDate, bannedBy }
     altGroups           = {},   -- [groupId] = { main, alts={}, ts }
     activityLog         = {},   -- [{type, player, ts, detail, actor}]  capped 2000
-    newsBuffer          = {},   -- [{name, desc, iconTex, rawLink}]  capped 50, newest-first
+    newsBuffer          = {},   -- [{name, desc, iconTex, rawLink, ts}]  capped 50, newest-first
     -- Guild Recruitment (posting to in-game Guild Finder)
     guildRecruitSettings = {
         listed         = false,
