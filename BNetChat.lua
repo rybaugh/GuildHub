@@ -29,6 +29,9 @@ end
 local MSG_PING     = "P"      -- peer presence probe
 local MSG_PONG     = "Q"      -- peer presence reply
 local MSG_GCHAT    = "G"      -- cross-guild chat payload
+local MSG_HIST_REQ   = "R"   -- request history since a timestamp
+local MSG_HIST_CHUNK = "C"   -- one batch of historical messages
+local MSG_HIST_SEP   = "\31" -- inner field separator within a chunk (avoids clash with SEP=\30)
 local SEP          = "\30"    -- field separator (unit-separator byte, safe in addon messages)
 local KEY_LEN      = 8        -- characters in a generated message key
 local PACKET_BN    = 220      -- max payload bytes per BNet packet
@@ -51,6 +54,8 @@ BNC._peers     = {}   -- [gameID : string] = {name, guild, lastSeen}
 BNC._seen      = {}   -- [key] = timestamp — keys of fully-assembled messages (dedup)
 BNC._fragments = {}   -- [key] = {total=N, received=count, [1]=frag, ...}
 BNC._chanNum   = nil  -- WoW channel slot number, set after JoinTemporaryChannel
+BNC._pendingHistReq = nil   -- requestId we sent; nil once fulfilled or no history needed
+BNC._histChunks     = {}    -- [requestId] = {total=N, received=0, [1..N]=fields}
 
 -- ── Key generator ─────────────────────────────────────────────────────────────
 local _POOL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
@@ -208,6 +213,35 @@ local function ReplyPong(gameID)
     end
 end
 
+function BNC:_RequestHistory(peer)
+    if not peer then return end
+    local reqId   = NewKey()
+    local sinceTs = GH.DB:GetLastLogoutTime()
+    BNC._pendingHistReq = reqId
+    BNC._seen[reqId]    = time()   -- pre-register so our own echo is ignored
+
+    local payload = table.concat(
+        { MSG_HIST_REQ, reqId, tostring(sinceTs), peer.name }, SEP)
+    local frags = Fragment(payload, NewKey(), PACKET_BN)
+
+    if peer.protocol == "BNET" then
+        -- Direct BNet whisper — only that peer receives it
+        for gid, p in pairs(BNC._peers) do
+            if p.name == peer.name then
+                for _, f in ipairs(frags) do BNSend(gid, f) end
+                break
+            end
+        end
+    else
+        -- Guild-channel broadcast; targetName field (fields[4]) keeps only
+        -- the named peer from responding
+        for _, f in ipairs(frags) do GuildSend(f, PRIO_HIST) end
+    end
+
+    GH:Debug("BNetChat", "_RequestHistory reqId=%s since=%s target=%s",
+             reqId, tostring(sinceTs), peer.name)
+end
+
 -- ── Fragment reassembly ───────────────────────────────────────────────────────
 local function AcceptFragment(key, n, total, body)
     local bucket = BNC._fragments[key]
@@ -271,6 +305,9 @@ local function DispatchPayload(payload, protocol, senderGameID)
         local peerProto = senderGameID and "BNET" or "GUILD"
         RegisterPeer(peerKey, fields[2] or "?", fields[3] or "?", nil, peerProto)
         GH:Debug("BNetChat", "Pong from %s [%s] via %s", fields[2], fields[3], peerProto)
+        if not BNC._pendingHistReq then
+            BNC:_RequestHistory(BNC._peers[peerKey])
+        end
 
     elseif kind == MSG_GCHAT and #fields >= 5 then
         local sender    = fields[2]
@@ -330,6 +367,106 @@ local function DispatchPayload(payload, protocol, senderGameID)
                 BNC._seen[rkey] = ts
                 local frags = Fragment(relayPayload, rkey, PACKET_CH)
                 SendToChannel(frags, PRIO_LIVE)
+            end
+        end
+
+    elseif kind == MSG_HIST_REQ and #fields >= 4 then
+        local reqId   = fields[2]
+        local sinceTs = tonumber(fields[3]) or 0
+        local target  = fields[4]
+
+        -- Only the named target responds; all others silently discard
+        if target ~= GH:GetPlayerName() then return end
+
+        local msgs = GH.DB:GetMessagesSince(sinceTs)
+        if #msgs == 0 then
+            GH:Debug("BNetChat", "HIST_REQ from %s: no messages since %s", target, tostring(sinceTs))
+            return
+        end
+
+        local BATCH       = 10
+        local totalChunks = math.ceil(#msgs / BATCH)
+        GH:Debug("BNetChat", "HIST_REQ: sending %d msgs in %d chunks to %s",
+                 #msgs, totalChunks, target)
+
+        for ci = 1, totalChunks do
+            local parts = { MSG_HIST_CHUNK, reqId,
+                            tostring(ci), tostring(totalChunks) }
+            for mi = (ci - 1) * BATCH + 1, math.min(ci * BATCH, #msgs) do
+                local m = msgs[mi]
+                parts[#parts + 1] = table.concat(
+                    { tostring(m.ts or 0),
+                      m.sender  or "",
+                      m.text    or "",
+                      m.sourceLabel or m.communityId or "" },
+                    MSG_HIST_SEP)
+            end
+            local chunkPayload = table.concat(parts, SEP)
+            local frags        = Fragment(chunkPayload, NewKey(), PACKET_BN)
+
+            -- Prefer BNet whisper back to requester; fall back to guild channel
+            if senderGameID then
+                for _, f in ipairs(frags) do BNSend(senderGameID, f) end
+            else
+                for _, f in ipairs(frags) do GuildSend(f, PRIO_HIST) end
+            end
+        end
+
+    elseif kind == MSG_HIST_CHUNK and #fields >= 4 then
+        local reqId = fields[2]
+        -- Ignore chunks not addressed to our pending request
+        if reqId ~= BNC._pendingHistReq then return end
+
+        local ci    = tonumber(fields[3])
+        local total = tonumber(fields[4])
+        if not ci or not total then return end
+
+        local bucket = BNC._histChunks[reqId]
+        if not bucket then
+            bucket = { total = total, received = 0 }
+            BNC._histChunks[reqId] = bucket
+        end
+        if not bucket[ci] then
+            bucket[ci]      = fields
+            bucket.received = bucket.received + 1
+        end
+
+        if bucket.received >= bucket.total then
+            BNC._pendingHistReq      = nil
+            BNC._histChunks[reqId]   = nil
+            local Chat = GH.Chat
+            local inserted = 0
+            for i = 1, bucket.total do
+                for fi = 5, #bucket[i] do
+                    local raw = bucket[i][fi]
+                    local parts = {}
+                    for v in (raw .. MSG_HIST_SEP)
+                                :gmatch("([^" .. MSG_HIST_SEP .. "]*)" .. MSG_HIST_SEP) do
+                        parts[#parts + 1] = v
+                    end
+                    if #parts >= 3 then
+                        local entry = {
+                            ts          = tonumber(parts[1]) or 0,
+                            sender      = parts[2],
+                            text        = parts[3],
+                            sourceLabel = parts[4] or "",
+                            communityId = "bnet:" .. (parts[4] or ""),
+                            isBNet      = true,
+                        }
+                        local isNew = GH.DB:AddCommunityMessage(entry)
+                        if isNew and Chat then
+                            Chat.communityMsgs[#Chat.communityMsgs + 1] = entry
+                            if #Chat.communityMsgs > 2000 then
+                                table.remove(Chat.communityMsgs, 1)
+                            end
+                            inserted = inserted + 1
+                        end
+                    end
+                end
+            end
+            GH:Debug("BNetChat", "History sync complete: %d new messages inserted", inserted)
+            if inserted > 0 and GH.UI and GH.UI.OnChatMessage then
+                GH.UI:OnChatMessage(Chat and Chat.XGUILD_ID or "__XGUILD__")
             end
         end
     end
