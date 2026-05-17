@@ -140,8 +140,17 @@ local function GuildSend(wire, prio)
 end
 
 local function SendToPeers(frags)
-    for gid in pairs(BNC._peers) do
-        for _, f in ipairs(frags) do BNSend(gid, f) end
+    local guildBroadcastDone = false
+    for gid, peer in pairs(BNC._peers) do
+        if (peer.protocol or "BNET") == "GUILD" then
+            -- One guild broadcast covers all guild-channel peers simultaneously
+            if not guildBroadcastDone then
+                for _, f in ipairs(frags) do GuildSend(f, PRIO_LIVE) end
+                guildBroadcastDone = true
+            end
+        else
+            for _, f in ipairs(frags) do BNSend(gid, f) end
+        end
     end
 end
 
@@ -249,6 +258,7 @@ local function DispatchPayload(payload, protocol, senderGameID)
     local kind = fields[1]
 
     if kind == MSG_PING then
+        if not senderGameID and (fields[2] or "") == GH:GetPlayerName() then return end
         local peerKey  = senderGameID or ("guild:" .. (fields[2] or "unknown"))
         local peerProto = senderGameID and "BNET" or "GUILD"
         RegisterPeer(peerKey, fields[2] or "?", fields[3] or "?", fields[4], peerProto)
@@ -256,6 +266,7 @@ local function DispatchPayload(payload, protocol, senderGameID)
         ReplyPong(senderGameID)  -- nil → replies via guild channel
 
     elseif kind == MSG_PONG then
+        if not senderGameID and (fields[2] or "") == GH:GetPlayerName() then return end
         local peerKey  = senderGameID or ("guild:" .. (fields[2] or "unknown"))
         local peerProto = senderGameID and "BNET" or "GUILD"
         RegisterPeer(peerKey, fields[2] or "?", fields[3] or "?", nil, peerProto)
