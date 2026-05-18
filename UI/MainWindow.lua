@@ -1058,15 +1058,15 @@ function UI:BuildSettingsPage(parent)
     -- 4 — Team Rank Threshold (GM only)
     local row4 = MakeRow("Team Rank Threshold", rowY)
     rowY = rowY - ROW_H
-    local officerDefault = GH.DB:GetSetting("officerRankThreshold") or GH:DetectOfficerThreshold()
-    MakeSpinner(row4, "teamRankThreshold", officerDefault, 0, 9,
-        "Rank index ≤ this can create/manage teams (default " .. officerDefault .. ")",
+    local detectedThreshold = GH:DetectOfficerThreshold()
+    MakeSpinner(row4, "teamRankThreshold", detectedThreshold, 0, 9,
+        "Rank index ≤ this can create/manage teams (auto-detected from officer chat access)",
         not GH:IsGuildMaster())
 
     -- 5 — Officer Rank Threshold (GM only)
     local row5 = MakeRow("Officer Rank Threshold", rowY)
     rowY = rowY - ROW_H
-    MakeSpinner(row5, "officerRankThreshold", GH:DetectOfficerThreshold(), 0, 9,
+    MakeSpinner(row5, "officerRankThreshold", detectedThreshold, 0, 9,
         "Rank index ≤ this grants all officer features (auto-detected from officer chat access)",
         not GH:IsGuildMaster())
 
