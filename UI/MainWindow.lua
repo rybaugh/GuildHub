@@ -484,6 +484,7 @@ function UI:CreateMainWindow()
             SelectTab(tabName)
             if tabName == "Members"  then GH.GuildData:Refresh() end
             if tabName == "Activity" then UI:RefreshActivityTab() end
+            if tabName == "Events"   then UI:RefreshEventsTab() end
             if tabName == "LFM"      then GH.Recruit:BroadcastAll(); UI:RefreshLFMList() end
             if tabName == "Recruit"  then
                 GH.GuildRecruit:RequestApplicants()
