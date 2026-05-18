@@ -52,11 +52,43 @@ function GH:IsGuildMaster()
     return rankIndex == 0
 end
 
+-- Walks WoW guild rank flags to find the highest rank index that still has
+-- officer chat access (flags 3/4 in GuildControlGetRankFlags cover speak/listen).
+-- Caches the result for the session; re-detects if guild data wasn't loaded yet.
+function GH:DetectOfficerThreshold()
+    if GH._cachedOfficerThreshold then
+        return GH._cachedOfficerThreshold
+    end
+    local getNumRanks  = rawget(_G, "GuildControlGetNumRanks")
+    local getRankFlags = rawget(_G, "GuildControlGetRankFlags")
+    if not getNumRanks or not getRankFlags then return 1 end
+
+    local numRanks = getNumRanks() or 0
+    if numRanks < 2 then return 1 end  -- guild data not loaded yet; safe fallback, not cached
+
+    local threshold = 0
+    for ri = 1, numRanks - 1 do
+        pcall(function()
+            -- GuildControlGetRankFlags returns one value per permission slot.
+            -- Slots 3 and 4 correspond to officer-chat speak and listen across
+            -- the WoW versions GuildHub targets.
+            local f = { getRankFlags(ri) }
+            if f[3] == 1 or f[3] == true or f[4] == 1 or f[4] == true then
+                threshold = ri
+            end
+        end)
+    end
+    GH._cachedOfficerThreshold = threshold
+    return threshold
+end
+
 function GH:IsOfficer()
     local _, _, rankIndex = GetGuildInfo("player")
     if rankIndex == nil then return false end
-    -- Rank 0 = Guild Master, rank 1 = typically Officer
-    local threshold = GH.DB and GH.DB:GetSetting("officerRankThreshold") or 4
+    local threshold = GH.DB and GH.DB:GetSetting("officerRankThreshold")
+    if threshold == nil then
+        threshold = GH:DetectOfficerThreshold()
+    end
     return rankIndex <= threshold
 end
 

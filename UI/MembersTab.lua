@@ -734,8 +734,15 @@ function UI:RefreshMembersTab()
         local personal     = GH.GuildData:GetPersonalNote(member.name)
         local capturedName = member.name
         if personal and personal ~= "" then
+            row.personalText:ClearAllPoints()
+            row.personalText:SetPoint("TOPLEFT", row.personalBtn, "TOPLEFT", 0, -2)
+            row.personalText:SetJustifyV("TOP")
             row.personalText:SetText(personal)
         else
+            row.personalText:ClearAllPoints()
+            row.personalText:SetPoint("LEFT", row.personalBtn, "LEFT", 0, 0)
+            row.personalText:SetJustifyV("MIDDLE")
+            row.personalText:SetHeight(S.ROW_H)
             row.personalText:SetText("|cff333355✎ Add note|r")
         end
 

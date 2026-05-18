@@ -130,7 +130,7 @@ local function MakeRoleCard(parent, role, x, y, default, minV, maxV)
     -- Count
     local state = { val = tonumber(default) or 0, minV = minV or 0, maxV = maxV or 25 }
     local countFS = S:FS(card, "OVERLAY", "large")
-    countFS:SetPoint("CENTER", card, "CENTER", 0, 6)
+    countFS:SetPoint("CENTER", card, "CENTER", 0, -4)
 
     local function Upd()
         local active = state.val > 0
@@ -829,7 +829,7 @@ function UI:CreateLFMTab(parent)
     end)
 
     -- Column headers (lp-relative; scroll frame is at lp x=4)
-    local HDR_Y = -28
+    local HDR_Y = -38
     local function ColHdr(text, x, cw, just)
         local fs = S:FS(lp, "OVERLAY")
         fs:SetPoint("TOPLEFT", lp, "TOPLEFT", x, HDR_Y)

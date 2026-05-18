@@ -569,12 +569,14 @@ function UI:CreateMainWindow()
         rowNameFS:SetPoint("TOPLEFT",  row, "TOPLEFT",  22, -3)
         rowNameFS:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -3)
         rowNameFS:SetJustifyH("LEFT")
+        rowNameFS:SetWordWrap(false)
         row.nameFS = rowNameFS
 
         local rowDescFS = S:FS(row, "OVERLAY")
         rowDescFS:SetPoint("TOPLEFT",  row, "TOPLEFT",  6, -18)
         rowDescFS:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -18)
         rowDescFS:SetJustifyH("LEFT")
+        rowDescFS:SetWordWrap(false)
         rowDescFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
         row.descFS = rowDescFS
 
@@ -1056,7 +1058,7 @@ function UI:BuildSettingsPage(parent)
     -- 4 — Team Rank Threshold (GM only)
     local row4 = MakeRow("Team Rank Threshold", rowY)
     rowY = rowY - ROW_H
-    local officerDefault = GH.DB:GetSetting("officerRankThreshold") or 1
+    local officerDefault = GH.DB:GetSetting("officerRankThreshold") or GH:DetectOfficerThreshold()
     MakeSpinner(row4, "teamRankThreshold", officerDefault, 0, 9,
         "Rank index ≤ this can create/manage teams (default " .. officerDefault .. ")",
         not GH:IsGuildMaster())
@@ -1064,8 +1066,8 @@ function UI:BuildSettingsPage(parent)
     -- 5 — Officer Rank Threshold (GM only)
     local row5 = MakeRow("Officer Rank Threshold", rowY)
     rowY = rowY - ROW_H
-    MakeSpinner(row5, "officerRankThreshold", 1, 0, 9,
-        "Rank index ≤ this grants all officer features (default 1)",
+    MakeSpinner(row5, "officerRankThreshold", GH:DetectOfficerThreshold(), 0, 9,
+        "Rank index ≤ this grants all officer features (auto-detected from officer chat access)",
         not GH:IsGuildMaster())
 
     -- 6 — Debug Mode
@@ -1190,6 +1192,9 @@ function UI:BuildSettingsPage(parent)
         end
     end
     RefreshFedStatus()
+    if not fedOfficer then
+        fedStatusFS:SetText("Officer rank required to configure the federation channel")
+    end
 
     if fedOfficer then
         applyBtn:SetScript("OnClick", function()

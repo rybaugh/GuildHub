@@ -252,6 +252,13 @@ function UI:CreateGuildRecruitTab(parent, w)
     listedChk:SetChecked(settings.listed or false)
     if not isOff then listedChk:SetAlpha(0.5); listedChk:Disable() end
     frame._listedChk = listedChk
+    if isOff then
+        listedChk:SetScript("OnClick", function()
+            local checked = listedChk:GetChecked() == true
+            local msg = frame._msgBox and frame._msgBox:GetText():match("^%s*(.-)%s*$") or ""
+            GH.GuildRecruit:_SetFinderListed(checked, msg)
+        end)
+    end
 
     local listedLbl = S:FS(pp, "OVERLAY", "normal")
     listedLbl:SetPoint("LEFT", listedChk, "RIGHT", 3, 0)
