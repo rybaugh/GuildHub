@@ -36,7 +36,7 @@ local SORT_MAP = {
     ["Name"]     = function(m) return m.name:lower() end,
     ["Rank"]     = function(m) return m.rankIndex or 999 end,
     ["Lvl"]      = function(m) return m.level or 0 end,
-    ["M+"]       = function(m) return GH.DB:GetMemberScore(m.name) or 0 end,
+    ["M+"]       = function(m) return GH.DB:GetMemberScore(m.fullName) or 0 end,
     ["Zone"]     = function(m) return (m.zone or ""):lower() end,
     ["Team"]     = function(m)
         local teams = GH.GuildData:GetMemberTeams(m.name)
@@ -44,7 +44,7 @@ local SORT_MAP = {
     end,
     ["Note"]     = function(m) return (m.note or ""):lower() end,
     ["Personal"] = function(m)
-        local note = GH.GuildData:GetPersonalNote(m.name) or ""
+        local note = GH.GuildData:GetPersonalNote(m.fullName) or ""
         return note:lower()
     end,
 }
@@ -503,8 +503,8 @@ local function GetOrCreateRow(index, parent)
                     C_PartyInfo.InviteUnit(m.fullName)
                 end
             else
-                local wasSelected = (UI._selectedMemberName == m.name)
-                UI._selectedMemberName = wasSelected and nil or m.name
+                local wasSelected = (UI._selectedMemberName == m.fullName)
+                UI._selectedMemberName = wasSelected and nil or m.fullName
                 UI:RefreshMembersTab()
                 if wasSelected then
                     if UI.ProfilePanel then UI.ProfilePanel:Hide() end
@@ -590,7 +590,7 @@ function UI:RefreshMembersTab()
         row:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -yOffset)
         row:Show()
 
-        local isSelected = (member.name == UI._selectedMemberName)
+        local isSelected = (member.fullName == UI._selectedMemberName)
         if isSelected then
             -- Selected row: deep sapphire tint
             local sr, sg, sb = S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3]
@@ -645,7 +645,7 @@ function UI:RefreshMembersTab()
         row.levelText:SetText(tostring(member.level or ""))
 
         -- M+ Score
-        local score = GH.DB:GetMemberScore(member.name)
+        local score = GH.DB:GetMemberScore(member.fullName)
         if score and score > 0 then
             local sr, sg, sb
             if     score >= 3000 then sr,sg,sb = 1.0, 0.5, 0.0
@@ -723,7 +723,7 @@ function UI:RefreshMembersTab()
             row.banBadge = badge
         end
         if GH.DB:GetSetting("rosterProfilesEnabled") ~= false and
-           GH.Profiles:IsBanned(member.name) then
+           GH.Profiles:IsBanned(member.fullName) then
             row.banBadge:SetText("|cffcc2222⛔|r")
         else
             row.banBadge:SetText("")
@@ -731,8 +731,8 @@ function UI:RefreshMembersTab()
 
         row.noteText:SetText(member.note or "")
 
-        local personal     = GH.GuildData:GetPersonalNote(member.name)
-        local capturedName = member.name
+        local personal     = GH.GuildData:GetPersonalNote(member.fullName)
+        local capturedName = member.fullName
         if personal and personal ~= "" then
             row.personalText:ClearAllPoints()
             row.personalText:SetPoint("TOPLEFT", row.personalBtn, "TOPLEFT", 0, -2)
@@ -928,7 +928,7 @@ function UI:ShowMemberContextMenu(member)
     end
 
     item("Whisper", function()
-        ChatFrame_OpenChat("/w " .. member.name .. " ")
+        ChatFrame_OpenChat("/w " .. member.fullName .. " ")
     end)
     item("Invite to Group", function()
         local fn = rawget(_G, "InviteUnit")
@@ -938,7 +938,7 @@ function UI:ShowMemberContextMenu(member)
         end
     end)
     item("Edit Personal Note", function()
-        UI:ShowPersonalNoteDialog(member.name)
+        UI:ShowPersonalNoteDialog(member.fullName)
     end)
 
     -- Roster profile actions
@@ -946,18 +946,18 @@ function UI:ShowMemberContextMenu(member)
         sep()
         if GH:IsOfficer() then
             item("Set as Main", function()
-                GH.Profiles:SetMain(member.name)
+                GH.Profiles:SetMain(member.fullName)
             end)
             item("Add Alt…", function()
-                UI:ShowAddAltDialog(member.name, member)
+                UI:ShowAddAltDialog(member.fullName, member)
             end)
-            if GH.Profiles:IsBanned(member.name) then
+            if GH.Profiles:IsBanned(member.fullName) then
                 item("Remove Ban", function()
-                    GH.Profiles:UnbanPlayer(member.name)
+                    GH.Profiles:UnbanPlayer(member.fullName)
                 end)
             else
                 item("Ban Player", function()
-                    UI:ShowBanDialog(member.name, member)
+                    UI:ShowBanDialog(member.fullName, member)
                 end, true)
             end
         end

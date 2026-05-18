@@ -337,7 +337,11 @@ end
 
 function DB:GetMemberNote(name)
     local gd = self:_GuildData()
-    return gd and gd.memberNotes and gd.memberNotes[name]
+    if not gd or not gd.memberNotes then return nil end
+    local v = gd.memberNotes[name]
+    if v ~= nil then return v end
+    local short = name:match("^([^%-]+)") or name
+    return short ~= name and gd.memberNotes[short] or nil
 end
 
 function DB:SetMemberNote(name, note)
@@ -350,7 +354,11 @@ end
 
 function DB:GetMemberScore(name)
     local gd = self:_GuildData()
-    return gd and gd.memberScores and gd.memberScores[name]
+    if not gd or not gd.memberScores then return nil end
+    local v = gd.memberScores[name]
+    if v ~= nil then return v end
+    local short = name:match("^([^%-]+)") or name
+    return short ~= name and gd.memberScores[short] or nil
 end
 
 function DB:SetMemberScore(name, score)
@@ -398,6 +406,18 @@ function DB:GetPlayerProfile(name)
             banDate          = nil,
             bannedBy         = nil,
         }
+    end
+    -- For cross-realm names: if the profile has no rank history but there is legacy
+    -- data under the short name (written before realm-aware keys were introduced),
+    -- deep-copy it in.  Deep-copy keeps the source intact so multiple same-named
+    -- cross-realm members each get an independent starting point.
+    local shortName = name:match("^([^%-]+)") or name
+    if shortName ~= name then
+        local legacy = gd.playerProfiles[shortName]
+        if legacy and #(legacy.rankHistory or {}) > 0
+        and #(gd.playerProfiles[name].rankHistory or {}) == 0 then
+            gd.playerProfiles[name] = self:_DeepCopy(legacy)
+        end
     end
     return gd.playerProfiles[name]
 end

@@ -597,9 +597,9 @@ function Chat:GetChannel(id)
     return GH.DB:GetChat(id)
 end
 
-function Chat:CreateChannel(name, members)
+function Chat:CreateChannel(name, members, groupId)
     local id = GH.DB:NewId()
-    local ch = { name = name, members = members or {}, messages = {} }
+    local ch = { name = name, members = members or {}, messages = {}, groupId = groupId or nil }
     GH.DB:SaveChat(id, ch)
     self:_BroadcastChannelInfo(id, ch)
     return id
@@ -779,20 +779,33 @@ function Chat:OnAddonMessage(payload, _)
         if GH.UI and GH.UI.OnChatMessage then GH.UI:OnChatMessage(channelId, msg) end
 
     elseif msgType == MSG_TYPE_CREATE and #parts >= 3 then
-        local channelId   = parts[2]
-        local channelName = parts[3]
-        local membersStr  = parts[4] or ""
+        local channelId       = parts[2]
+        local channelName     = parts[3]
+        local membersStr      = parts[4] or ""
+        local incomingGroupId = (parts[5] and parts[5] ~= "") and parts[5] or nil
         local members = {}
         for m in (membersStr .. ","):gmatch("([^,]*),") do
             if m ~= "" then members[#members + 1] = m end
         end
         local myName = GH:GetPlayerName()
         for _, n in ipairs(members) do
-            if n == myName and not GH.DB:GetChat(channelId) then
-                GH.DB:SaveChat(channelId,
-                    { name = channelName, members = members, messages = {} })
-                if GH.UI and GH.UI.OnChannelListChanged then
-                    GH.UI:OnChannelListChanged()
+            if n == myName then
+                local existing = GH.DB:GetChat(channelId)
+                if not existing then
+                    GH.DB:SaveChat(channelId, {
+                        name     = channelName,
+                        members  = members,
+                        messages = {},
+                        groupId  = incomingGroupId,
+                    })
+                    if GH.UI and GH.UI.OnChannelListChanged then
+                        GH.UI:OnChannelListChanged()
+                    end
+                elseif incomingGroupId and not existing.groupId then
+                    -- Back-fill groupId onto an older chat record that was saved before
+                    -- this field existed.
+                    existing.groupId = incomingGroupId
+                    GH.DB:SaveChat(channelId, existing)
                 end
                 break
             end
@@ -849,7 +862,13 @@ end
 
 function Chat:_BroadcastChannelInfo(id, ch)
     local memberStr = table.concat(ch.members, ",")
-    local payload   = table.concat({ MSG_TYPE_CREATE, id, ch.name, memberStr }, SEPARATOR)
+    local groupId   = ch.groupId or ""
+    -- Include groupId so receivers can link the chat record back to its team.
+    -- Fall back to omitting groupId (then members) if the payload would be too long.
+    local payload = table.concat({ MSG_TYPE_CREATE, id, ch.name, memberStr, groupId }, SEPARATOR)
+    if #payload > 250 then
+        payload = table.concat({ MSG_TYPE_CREATE, id, ch.name, memberStr }, SEPARATOR)
+    end
     if #payload <= 250 then
         local C_ChatInfo = rawget(_G, "C_ChatInfo")
         if C_ChatInfo then

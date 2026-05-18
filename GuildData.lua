@@ -20,7 +20,7 @@ local function RequestRosterUpdate()
 end
 
 GD.members  = {}   -- array of member info tables, sorted online-first then alphabetically
-GD.byName   = {}   -- shortName -> member table
+GD.byName   = {}   -- fullName -> member table
 
 GD._prevOnlineNames = {}  -- [name]=true for members online at last Refresh
 
@@ -152,11 +152,11 @@ local function DrainFetchQueue()
     local remaining    = {}
 
     for _, entry in ipairs(_fetchQueue) do
-        local fresh = GD.byName[entry.member.name]
+        local fresh = GD.byName[entry.member.fullName]
         if fresh and fresh.online then
             local score = FetchMythicScore(fresh, unitTokenMap)
             if score > 0 then
-                GH.DB:SetMemberScore(fresh.name, score)
+                GH.DB:SetMemberScore(fresh.fullName, score)
                 if GH.UI and GH.UI.window and GH.UI.window:IsShown()
                 and GH.UI.window.activeTab == "Members" then
                     GH.UI:RefreshMembersTab()
@@ -176,7 +176,7 @@ end
 
 local function EnqueueForRetry(member)
     for _, entry in ipairs(_fetchQueue) do
-        if entry.member.name == member.name then return end
+        if entry.member.fullName == member.fullName then return end
     end
     _fetchQueue[#_fetchQueue + 1] = { member = member, attempts = 0 }
     if not _fetchRunning then
@@ -203,9 +203,9 @@ function GD:Initialize()
         elseif event == "PLAYER_GUILD_UPDATE" then
             RequestRosterUpdate()
         elseif event == "CHAT_MSG_ADDON" then
-            local prefix, payload = ...
+            local prefix, payload, _, sender = ...
             if prefix == GH.ADDON_PREFIX then
-                GD:OnAddonMessage(payload)
+                GD:OnAddonMessage(payload, sender)
             end
         elseif event == "INSPECT_READY" then
             GD:OnInspectReady()
@@ -244,12 +244,15 @@ function GD:RequestScoresFromGuild()
         GD_PREFIX_REQUEST .. GH:GetPlayerName(), "GUILD")
 end
 
-function GD:OnAddonMessage(payload)
+function GD:OnAddonMessage(payload, sender)
     if payload:sub(1, #GD_PREFIX_SCORE) == GD_PREFIX_SCORE then
         local rest = payload:sub(#GD_PREFIX_SCORE + 1)
         local name, scoreStr = rest:match("^([^|]+)|(%d+)$")
         if name and scoreStr then
-            GH.DB:SetMemberScore(name, tonumber(scoreStr))
+            -- Use sender (full name including realm for cross-realm members) as the key.
+            -- Payload name is always short; sender from CHAT_MSG_ADDON includes realm.
+            local key = (sender and sender ~= "") and sender or name
+            GH.DB:SetMemberScore(key, tonumber(scoreStr))
             if GH.UI and GH.UI.window and GH.UI.window:IsShown()
             and GH.UI.window.activeTab == "Members" then
                 GH.UI:RefreshMembersTab()
@@ -337,7 +340,7 @@ function GD:Refresh()
                 guid          = select(17, GetGuildRosterInfo(i)),
             }
             self.members[#self.members + 1] = member
-            self.byName[shortName] = member
+            self.byName[name] = member
         end
     end
 
@@ -353,15 +356,15 @@ function GD:Refresh()
     for _, member in ipairs(self.members) do
         local score = FetchMythicScore(member, unitTokenMap)
         if score > 0 then
-            GH.DB:SetMemberScore(member.name, score)
+            GH.DB:SetMemberScore(member.fullName, score)
         end
     end
 
     -- Newly-online members whose score still came back 0 (neither WoW API nor
     -- RaiderIO had data yet) are queued for periodic retries.
     for _, member in ipairs(self.members) do
-        if member.online and not GD._prevOnlineNames[member.name] then
-            if (GH.DB:GetMemberScore(member.name) or 0) == 0 then
+        if member.online and not GD._prevOnlineNames[member.fullName] then
+            if (GH.DB:GetMemberScore(member.fullName) or 0) == 0 then
                 EnqueueForRetry(member)
             end
         end
@@ -369,7 +372,7 @@ function GD:Refresh()
 
     GD._prevOnlineNames = {}
     for _, member in ipairs(self.members) do
-        if member.online then GD._prevOnlineNames[member.name] = true end
+        if member.online then GD._prevOnlineNames[member.fullName] = true end
     end
 
     if GH.UI and GH.UI.OnRosterRefresh then
@@ -387,11 +390,19 @@ function GD:OnInspectReady()
     if score <= 0 then return end
     local name = UnitName and UnitName("target")
     if not name then return end
+    -- Find the member's fullName from the roster for a consistent key
     local shortName = name:match("^([^%-]+)") or name
-    GH.DB:SetMemberScore(shortName, score)
+    local member = GD.byName[name]
+    if not member then
+        for _, m in ipairs(GD.members) do
+            if m.name == shortName then member = m; break end
+        end
+    end
+    local scoreKey = (member and member.fullName) or name
+    GH.DB:SetMemberScore(scoreKey, score)
     local pruned = {}
     for _, entry in ipairs(_fetchQueue) do
-        if entry.member.name ~= shortName then pruned[#pruned + 1] = entry end
+        if entry.member.fullName ~= scoreKey then pruned[#pruned + 1] = entry end
     end
     _fetchQueue = pruned
     if GH.UI and GH.UI.window and GH.UI.window:IsShown()
@@ -405,9 +416,9 @@ function GD:GetMembers(filter)
     local lf = filter:lower()
     local out = {}
     for _, m in ipairs(self.members) do
-        local score = GH.DB:GetMemberScore(m.name) or 0
+        local score = GH.DB:GetMemberScore(m.fullName) or 0
         local team = self:GetMemberTeam(m.name)
-        local personal = GH.DB:GetMemberNote(m.name) or ""
+        local personal = GH.DB:GetMemberNote(m.fullName) or ""
         local levelStr = tostring(m.level or "")
         local scoreStr = score > 0 and tostring(score) or ""
 
@@ -432,15 +443,15 @@ end
 
 function GD:FindMember(nameInput)
     if not nameInput or nameInput == "" then return nil end
-    local shortInput = nameInput:match("^([^%%-]+)") or nameInput
-    local m = self.byName[nameInput] or self.byName[shortInput]
+    local m = self.byName[nameInput]
     if m then return m end
+    local shortInput = nameInput:match("^([^%%-]+)") or nameInput
     local lower = nameInput:lower()
     local shortLower = shortInput:lower()
     for _, member in ipairs(self.members) do
-        if member.name:lower() == lower
-        or member.name:lower() == shortLower
-        or (member.fullName and member.fullName:lower() == lower) then
+        if member.fullName:lower() == lower
+        or member.name:lower() == lower
+        or member.name:lower() == shortLower then
             return member
         end
     end

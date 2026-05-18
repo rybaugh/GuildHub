@@ -7,9 +7,10 @@ local GH          = GuildHub
 local ActivityLog = GH.ActivityLog
 
 -- Snapshot of the previous roster state: [name] = {rankIndex, level, note, officerNote}
-local _prevSnapshot = {}
-local _initialised  = false
-local _pendingTimer     = false  -- debounce flag so rapid GUILD_ROSTER_UPDATE events collapse
+local _prevSnapshot   = {}
+local _initialised    = false
+local _pendingTimer   = false  -- debounce flag so rapid GUILD_ROSTER_UPDATE events collapse
+local _postInitPruned = false  -- pruning runs once after the first real diff
 
 -- Registered UI callbacks notified when new entries are added.
 local _callbacks = {}
@@ -99,8 +100,7 @@ function ActivityLog:_BuildSnapshot()
     for i = 1, total do
         local name, rankName, rankIndex, level, _, _, note, officerNote = GetGuildRosterInfo(i)
         if name then
-            local short = name:match("^([^%-]+)")
-            snap[short] = {
+            snap[name] = {
                 rankName    = rankName or "",
                 rankIndex   = rankIndex or 0,
                 level       = level or 1,
@@ -200,6 +200,10 @@ function ActivityLog:_OnRosterUpdate()
     end
 
     _prevSnapshot = snap
+    if not _postInitPruned then
+        _postInitPruned = true
+        self:_PruneSpuriousLoginEvents()
+    end
     self:_NotifyCallbacks()
 end
 
@@ -210,7 +214,7 @@ function ActivityLog:_PruneSpuriousLoginEvents()
     -- Count JOIN/LEAVE events per exact timestamp.
     local tsCounts = {}
     for _, entry in ipairs(log) do
-        if entry.type == "JOIN" or entry.type == "LEAVE" then
+        if entry.type == "JOIN" or entry.type == "LEAVE" or entry.type == "REJOIN" then
             tsCounts[entry.ts] = (tsCounts[entry.ts] or 0) + 1
         end
     end
@@ -229,7 +233,7 @@ function ActivityLog:_PruneSpuriousLoginEvents()
     -- Rebuild log without the spurious JOIN/LEAVE entries.
     local cleaned = {}
     for _, entry in ipairs(log) do
-        local isBadType = entry.type == "JOIN" or entry.type == "LEAVE"
+        local isBadType = entry.type == "JOIN" or entry.type == "LEAVE" or entry.type == "REJOIN"
         if not (isBadType and spurious[entry.ts]) then
             cleaned[#cleaned + 1] = entry
         end

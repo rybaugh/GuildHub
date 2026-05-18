@@ -32,7 +32,7 @@ local function EnsureTeamChannel(groupId)
         if n == myName then hasMe = true end
     end
     if not hasMe then chanMembers[#chanMembers + 1] = myName end
-    local channelId = GH.Chat:CreateChannel(g.name, chanMembers)
+    local channelId = GH.Chat:CreateChannel(g.name, chanMembers, groupId)
     GH.Groups:SetChannel(groupId, channelId)
     return channelId
 end
@@ -503,7 +503,7 @@ function UI:RefreshTeamRoster(groupId)
 
     local sorted = {}
     for _, name in ipairs(g.members) do
-        local info = GH.GuildData.byName[name]
+        local info = GH.GuildData:FindMember(name)
         sorted[#sorted + 1] = { name = name, info = info, online = info and info.online }
     end
     table.sort(sorted, function(a, b)

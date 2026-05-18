@@ -784,7 +784,7 @@ function UI:RefreshChatMembersPanel(channelId)
         if teamGroup then
             title = teamGroup.name
             for _, name in ipairs(teamGroup.members or {}) do
-                local info = GH.GuildData.byName[name]
+                local info = GH.GuildData:FindMember(name)
                 members[#members + 1] = { name = name, info = info, online = info and info.online }
             end
         else
@@ -792,7 +792,7 @@ function UI:RefreshChatMembersPanel(channelId)
             if ch then
                 title = ch.name
                 for _, name in ipairs(ch.members or {}) do
-                    local info = GH.GuildData.byName[name]
+                    local info = GH.GuildData:FindMember(name)
                     members[#members + 1] = { name = name, info = info, online = info and info.online }
                 end
             end

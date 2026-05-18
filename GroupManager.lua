@@ -43,25 +43,46 @@ function Groups:Initialize()
         end
     end)
 
-    -- After login, ask online officers to verify team membership
-    C_Timer.After(12, function() Groups:RequestTeamSync() end)
+    -- After login, ask online officers to verify team membership.
+    -- Retry a few times so a delayed officer login still delivers the sync.
+    local function TrySyncRequest(attempt)
+        if not GH:IsInGuild() then return end
+        -- Stop retrying once we already have at least one team with our name.
+        if attempt > 1 then
+            local myName = GH:GetPlayerName()
+            for _, g in pairs(GH.DB:GetGroups()) do
+                for _, n in ipairs(g.members or {}) do
+                    if n == myName then return end
+                end
+            end
+        end
+        Groups:RequestTeamSync()
+        if attempt < 4 then
+            C_Timer.After(90, function() TrySyncRequest(attempt + 1) end)
+        end
+    end
+    C_Timer.After(12, function() TrySyncRequest(1) end)
 end
 
 -- ── Basic group CRUD ──────────────────────────────────────────────────────
 
 function Groups:GetAll()
-    local myName   = GH:GetPlayerName()
+    local myName    = GH:GetPlayerName()
     local isOfficer = GH:IsOfficer()
-    local out = {}
+    local out        = {}
+    local includedIds = {}
+
     for id, g in pairs(GH.DB:GetGroups()) do
         local members = g.members or {}
         local isMember = false
         for _, n in ipairs(members) do
             if n == myName then isMember = true; break end
         end
-        -- Officers see all teams; empty legacy teams also visible to managers for cleanup.
-        local isEmpty = (#members == 0)
-        if isMember or isOfficer or (isEmpty and GH:CanManageTeams()) then
+        -- Fall back to chat membership to handle desync where the group member list
+        -- was never updated locally (e.g. TMSYN missed because no officer was online).
+        local isEmpty    = (#members == 0)
+        local chatMember = not isMember and g.channelId and GH.Chat:IsMember(g.channelId, myName)
+        if isMember or isOfficer or chatMember or (isEmpty and GH:CanManageTeams()) then
             out[#out + 1] = {
                 id        = id,
                 name      = g.name,
@@ -71,8 +92,50 @@ function Groups:GetAll()
                 pending   = g.pending,
                 createdAt = g.createdAt,
             }
+            includedIds[id] = true
         end
     end
+
+    -- Fallback: also surface teams where the group record is entirely missing but the
+    -- chat record still exists and lists us as a member.  Determine a candidate groupId:
+    --   1. ch.groupId if already stamped, else
+    --   2. reverse-lookup from existing groups by channelId, else
+    --   3. chatId itself as a provisional key (cleaned up when a real TMSYN arrives).
+    for chatId, ch in pairs(GH.DB:GetChats()) do
+        local gid = ch.groupId
+        if not gid then
+            for existingId, g in pairs(GH.DB:GetGroups()) do
+                if g.channelId == chatId then gid = existingId; break end
+            end
+        end
+        if not gid then gid = chatId end   -- provisional: use chatId as temp key
+
+        if not includedIds[gid] then
+            local isChatMember = false
+            for _, n in ipairs(ch.members or {}) do
+                if n == myName then isChatMember = true; break end
+            end
+            if isChatMember then
+                if not GH.DB:GetGroups()[gid] then
+                    GH.DB:SaveGroup(gid, {
+                        name      = ch.name,
+                        members   = ch.members,
+                        channelId = chatId,
+                        color     = "7289DA",
+                    })
+                end
+                out[#out + 1] = {
+                    id        = gid,
+                    name      = ch.name,
+                    members   = ch.members,
+                    color     = "7289DA",
+                    channelId = chatId,
+                }
+                includedIds[gid] = true
+            end
+        end
+    end
+
     table.sort(out, function(a, b) return a.name < b.name end)
     return out
 end
@@ -611,6 +674,15 @@ function Groups:OnAddonMessage(payload, _)
             end
             if not hasMe then members[#members + 1] = myName end
 
+            -- Remove any provisional stub that was using this channelId as a temp key
+            -- (created by GetAll when no group record existed and TMSYN hadn't arrived).
+            if channelId and channelId ~= groupId then
+                local provisional = GH.DB:GetGroups()[channelId]
+                if provisional and provisional.channelId == channelId then
+                    GH.DB:DeleteGroup(channelId)
+                end
+            end
+
             -- Save / update local team record
             local existing = GH.DB:GetGroups()[groupId]
             GH.DB:SaveGroup(groupId, {
@@ -620,13 +692,21 @@ function Groups:OnAddonMessage(payload, _)
                 color     = existing and existing.color or "7289DA",
             })
 
-            -- Bootstrap channel record if we don't have it yet
-            if channelId and not GH.DB:GetChat(channelId) then
-                GH.DB:SaveChat(channelId, {
-                    name     = teamName,
-                    members  = members,
-                    messages = {},
-                })
+            -- Bootstrap or update channel record; stamp groupId so chats can be linked
+            -- back to their group even if the group record itself is later lost.
+            if channelId then
+                local existingChat = GH.DB:GetChat(channelId)
+                if not existingChat then
+                    GH.DB:SaveChat(channelId, {
+                        name     = teamName,
+                        members  = members,
+                        messages = {},
+                        groupId  = groupId,
+                    })
+                elseif not existingChat.groupId then
+                    existingChat.groupId = groupId
+                    GH.DB:SaveChat(channelId, existingChat)
+                end
             end
 
             if GH.UI then GH.UI:RefreshTeamsGroupList() end

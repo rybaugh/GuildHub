@@ -279,11 +279,11 @@ function UI:ShowProfilePanel(memberData)
     end
 
     local panel = UI.ProfilePanel
-    local name  = memberData.name
+    local name  = memberData.fullName
     local profile = GH.Profiles:GetProfile(name)
 
     panel.currentName = name
-    panel.nameLabel:SetText(name)
+    panel.nameLabel:SetText(memberData.name)
 
     local realm = memberData.fullName and memberData.fullName:match("%-(.+)$")
     if realm and realm ~= "" then
@@ -502,7 +502,7 @@ function UI:ShowSetJoinDateDialog(name)
             if UI.ProfilePanel and UI.ProfilePanel:IsShown() then
                 local members = GH.GuildData:GetMembers()
                 for _, mb in ipairs(members) do
-                    if mb.name == name then UI:ShowProfilePanel(mb); break end
+                    if mb.fullName == name then UI:ShowProfilePanel(mb); break end
                 end
             end
         end
@@ -668,7 +668,7 @@ function UI:ShowAddAltDialog(mainName, mainMemberData)
         rowBtns = {}
         local idx = 0
         for _, m in ipairs(members) do
-            if m.name ~= mainName then
+            if m.fullName ~= mainName then
                 local show = filter == "" or m.name:lower():find(filter:lower(), 1, true)
                 if show then
                     local btn = CreateFrame("Button", nil, sc)
@@ -685,7 +685,7 @@ function UI:ShowAddAltDialog(mainName, mainMemberData)
                     lbl:SetTextColor(cr, cg, cb)
                     btn:SetScript("OnEnter", function() bg:SetColorTexture(1, 1, 1, 0.06) end)
                     btn:SetScript("OnLeave", function() bg:SetColorTexture(0, 0, 0, 0) end)
-                    local capName = m.name
+                    local capName = m.fullName
                     btn:SetScript("OnClick", function()
                         GH.Profiles:AddAlt(mainName, capName)
                         dlg:Hide()

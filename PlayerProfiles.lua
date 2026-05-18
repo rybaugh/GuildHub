@@ -137,26 +137,25 @@ function Profiles:_OnRosterUpdate()
     for i = 1, total do
         local name, _, _, _, _, _, note, officerNote, _, _, classFile = GetGuildRosterInfo(i)
         if name then
-            local shortName = name:match("^([^%-]+)")
-            local profile   = GH.DB:GetPlayerProfile(shortName)
+            local profile = GH.DB:GetPlayerProfile(name)
 
             -- Seed join date only if completely unknown
             if not profile.joinDate then
                 -- WoW doesn't expose join date directly; mark as unverified placeholder
                 profile.joinDate         = now
                 profile.joinDateVerified = false
-                GH.DB:SavePlayerProfile(shortName, profile)
+                GH.DB:SavePlayerProfile(name, profile)
             end
 
             -- Check if a banned player just rejoined
             if profile.isBanned then
-                GH.ActivityLog:Add("BAN_REJOIN", shortName, now, {
+                GH.ActivityLog:Add("BAN_REJOIN", name, now, {
                     banReason = profile.banReason,
                     bannedBy  = profile.bannedBy,
                 })
                 -- Alert the current player if they are an officer
                 if GH:IsOfficer() then
-                    print("|cff7289daGuildHub:|r |cffff4444[Ban Alert]|r " .. shortName ..
+                    print("|cff7289daGuildHub:|r |cffff4444[Ban Alert]|r " .. name ..
                           " has rejoined the guild. Reason: " .. (profile.banReason or "none"))
                 end
             end
