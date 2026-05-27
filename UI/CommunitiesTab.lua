@@ -631,10 +631,10 @@ function UI:_RefreshCommunityChat()
     local rowY     = 0
     _oldestMsgId   = nil
 
-    for idx, msg in ipairs(messages) do
+    for _, msg in ipairs(messages) do
         if not msg.destroyed and msg.content and msg.content ~= "" then
-            -- Track oldest message for lazy-load paging
-            if idx == 1 then _oldestMsgId = msg.id end
+            -- Track oldest valid rendered message for lazy-load paging
+            if not _oldestMsgId then _oldestMsgId = msg.id end
 
             local row = AcquireMsgRow(sc)
             row:ClearAllPoints()
