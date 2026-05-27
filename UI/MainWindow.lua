@@ -23,8 +23,10 @@ function UI:CreateMainWindow()
     -- Forward-declare locals that are referenced across closures defined at
     -- different points in this function (title bar, HideAllTabContent, SelectTab,
     -- and the TABS nav-button loop all share these upvalues).
-    local navBtns = {}
-    local commBtn  -- assigned in the title bar section below
+    local navBtns         = {}
+    local commBtn              -- assigned in the title bar section below
+    local HideAllTabContent    -- forward-declared so commBtn OnClick can close over it
+    local SelectTab            -- forward-declared so commBtn OnClick can close over it
 
     -- Restore the user's saved dimensions (falls back to the style defaults).
     local savedW = GH.DB:GetSetting("windowW") or S.WINDOW_W
@@ -431,7 +433,7 @@ function UI:CreateMainWindow()
     local contentW = win:GetWidth()  - S.SIDEBAR_W - 1
     local contentH = win:GetHeight() - S.TITLEBAR_H
 
-    local function HideAllTabContent()
+    HideAllTabContent = function()
         for _, t in ipairs(TABS) do
             if UI[t .. "Tab"] then UI[t .. "Tab"]:Hide() end
         end
@@ -439,7 +441,7 @@ function UI:CreateMainWindow()
         if win.settingsPage then win.settingsPage:Hide() end
     end
 
-    local function SelectTab(tabName)
+    SelectTab = function(tabName)
         win.activeTab = tabName
         HideAllTabContent()
         -- Deactivate Communities header button when switching to a sidebar tab
