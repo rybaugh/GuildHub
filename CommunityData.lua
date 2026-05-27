@@ -23,7 +23,7 @@ function CD:GetAll()
     local clubs = C_Club.GetSubscribedClubs() or {}
     local out = {}
     for _, club in ipairs(clubs) do
-        if club.clubType ~= Enum.ClubType.Guild then
+        if club.clubType ~= (Enum and Enum.ClubType and Enum.ClubType.Guild) then
             out[#out + 1] = club
         end
     end
@@ -93,12 +93,12 @@ end
 -- Returns cached array of ClubFinderCandidateClubData.
 function CD:CacheFinderResults()
     if not (C_ClubFinder and C_ClubFinder.GetRecruitingClubs) then
-        self._finderResults = {}
+        CD._finderResults = {}
         return {}
     end
     local ok, results = pcall(C_ClubFinder.GetRecruitingClubs, 0, 50)
-    self._finderResults = (ok and type(results) == "table") and results or {}
-    return self._finderResults
+    CD._finderResults = (ok and type(results) == "table") and results or {}
+    return CD._finderResults
 end
 
 -- Submits an application to a club found via the finder.
