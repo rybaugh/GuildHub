@@ -4,6 +4,7 @@
 -- Rank 0 (Guild Master) is handled as a special case — always has all permissions.
 
 local GH = GuildHub
+GH.Permissions = GH.Permissions or {}
 local P  = GH.Permissions
 
 -- Flag slot indices returned by GuildControlGetRankFlags.
@@ -36,13 +37,14 @@ function P:LoadRankPermissions()
     local numRanks = getNumRanks() or 0
     if numRanks < 2 then return end  -- guild data not ready; GUILD_ROSTER_UPDATE will retry
 
-    GH._rankFlags = {}
+    local fresh = {}
     for ri = 1, numRanks - 1 do  -- skip 0 (GM); GM handled as special case in HasPermission
         local ok, flags = pcall(function() return { getRankFlags(ri) } end)
         if ok and flags then
-            GH._rankFlags[ri] = flags
+            fresh[ri] = flags
         end
     end
+    GH._rankFlags = fresh
 end
 
 function GH:HasPermission(flag)
@@ -63,4 +65,5 @@ function P:Initialize()
     frame:SetScript("OnEvent", function()
         P:LoadRankPermissions()
     end)
+    P.eventFrame = frame
 end
