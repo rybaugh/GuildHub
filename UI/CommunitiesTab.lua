@@ -279,11 +279,214 @@ function UI:OnClubFinderLoaded()
     UI:_PopulateFinderResults()
 end
 
--- Stub implementations for panels (filled in Tasks 4–6)
-function UI:_CreateCommunityRosterPanel(_parent) end
+-- ── Roster panel ─────────────────────────────────────────────────────────────
+
+local _rosterPool       = {}
+local _rosterActiveRows = {}
+
+local function AcquireRosterRow(parent)
+    local row = table.remove(_rosterPool)
+    if row then row:SetParent(parent); return row end
+
+    row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(S.ROW_H)
+
+    -- Alternating stripe background
+    local stripe = row:CreateTexture(nil, "BACKGROUND")
+    stripe:SetAllPoints()
+    row.stripe = stripe
+
+    -- Online dot
+    local dot = row:CreateTexture(nil, "ARTWORK")
+    dot:SetSize(8, 8)
+    dot:SetPoint("LEFT", row, "LEFT", 8, 0)
+    row.dot = dot
+
+    -- Name
+    local nameFS = S:FS(row, "OVERLAY", "normal")
+    nameFS:SetPoint("LEFT",  row, "LEFT",  22, 0)
+    nameFS:SetWidth(110)
+    nameFS:SetJustifyH("LEFT")
+    nameFS:SetWordWrap(false)
+    row.nameFS = nameFS
+
+    -- Level
+    local lvlFS = S:FS(row, "OVERLAY")
+    lvlFS:SetPoint("LEFT", row, "LEFT", 136, 0)
+    lvlFS:SetWidth(30)
+    lvlFS:SetJustifyH("LEFT")
+    row.lvlFS = lvlFS
+
+    -- Role
+    local roleFS = S:FS(row, "OVERLAY")
+    roleFS:SetPoint("LEFT", row, "LEFT", 170, 0)
+    roleFS:SetWidth(78)
+    roleFS:SetJustifyH("LEFT")
+    row.roleFS = roleFS
+
+    -- Zone
+    local zoneFS = S:FS(row, "OVERLAY")
+    zoneFS:SetPoint("LEFT",  row, "LEFT",  252, 0)
+    zoneFS:SetPoint("RIGHT", row, "RIGHT", -6,  0)
+    zoneFS:SetJustifyH("LEFT")
+    zoneFS:SetWordWrap(false)
+    row.zoneFS = zoneFS
+
+    return row
+end
+
+local function ReleaseRosterRow(row)
+    row:Hide()
+    _rosterPool[#_rosterPool + 1] = row
+end
+
+function UI:_CreateCommunityRosterPanel(parent)
+    local panel = CreateFrame("Frame", nil, parent)
+    panel:SetPoint("TOPLEFT",    parent, "TOPLEFT",    0, 0)
+    panel:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
+    panel:SetWidth(ROST_W)
+    UI.CommunitiesTab.rosterPanel = panel
+
+    -- Header bar
+    local hdr = CreateFrame("Frame", nil, panel)
+    hdr:SetPoint("TOPLEFT",  panel, "TOPLEFT",  0, 0)
+    hdr:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+    hdr:SetHeight(32)
+    S:GradientBg(hdr, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
+
+    local hdrFS = S:FS(hdr, "OVERLAY", "normal")
+    hdrFS:SetPoint("LEFT", hdr, "LEFT", 10, 0)
+    hdrFS:SetPoint("RIGHT", hdr, "RIGHT", -6, 0)
+    hdrFS:SetJustifyH("LEFT")
+    hdrFS:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+    panel.hdrFS = hdrFS
+
+    local hdrDiv = hdr:CreateTexture(nil, "ARTWORK")
+    hdrDiv:SetPoint("BOTTOMLEFT",  hdr, "BOTTOMLEFT")
+    hdrDiv:SetPoint("BOTTOMRIGHT", hdr, "BOTTOMRIGHT")
+    hdrDiv:SetHeight(1)
+    hdrDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.4)
+
+    -- Column header
+    local colHdr = CreateFrame("Frame", nil, panel)
+    colHdr:SetPoint("TOPLEFT",  panel, "TOPLEFT",  0, -32)
+    colHdr:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -32)
+    colHdr:SetHeight(20)
+    S:Bg(colHdr, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 1)
+
+    local function ColLabel(text, x, w)
+        local fs = S:FS(colHdr, "OVERLAY")
+        fs:SetPoint("LEFT", colHdr, "LEFT", x, 0)
+        fs:SetWidth(w)
+        fs:SetJustifyH("LEFT")
+        fs:SetText(text)
+        fs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    end
+    ColLabel("Name",  22,  110)
+    ColLabel("Lvl",   136,  30)
+    ColLabel("Role",  170,  78)
+    ColLabel("Zone",  252,  ROST_W - 258)
+
+    -- Scroll frame
+    local sf = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -52)
+    sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
+
+    local sc = CreateFrame("Frame", nil, sf)
+    sc:SetHeight(10)
+    sf:SetScrollChild(sc)
+    local function SyncW() sc:SetWidth(math.max(sf:GetWidth(), 1)) end
+    sf:SetScript("OnSizeChanged", SyncW)
+    C_Timer.After(0, SyncW)
+
+    panel.scrollFrame   = sf
+    panel.scrollContent = sc
+end
+
+function UI:_RefreshCommunityRoster()
+    local frame = UI.CommunitiesTab
+    local panel = frame and frame.rosterPanel
+    if not panel then return end
+
+    -- Release existing rows
+    for _, row in ipairs(_rosterActiveRows) do ReleaseRosterRow(row) end
+    _rosterActiveRows = {}
+
+    if not _activeClubId then return end
+
+    local members = GH.Communities:GetMembers(_activeClubId)
+
+    -- Update header
+    local onCount = 0
+    for _, m in ipairs(members) do
+        if GH.Communities:IsOnline(m.presence) then onCount = onCount + 1 end
+    end
+    local clubInfo = C_Club and C_Club.GetClubInfo and C_Club.GetClubInfo(_activeClubId)
+    local clubName = (clubInfo and clubInfo.name) or "Community"
+    panel.hdrFS:SetText(clubName .. "  |cff888899" .. onCount .. "/" .. #members .. " online|r")
+
+    local sc    = panel.scrollContent
+    local rowY  = 0
+    local rowI  = 0
+
+    for _, member in ipairs(members) do
+        if member.name and not member.isBanned then
+            rowI = rowI + 1
+            local row = AcquireRosterRow(sc)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT",  sc, "TOPLEFT",  0, -rowY)
+            row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -rowY)
+            rowY = rowY + S.ROW_H
+
+            -- Alternating stripe
+            if rowI % 2 == 0 then
+                row.stripe:SetColorTexture(
+                    S.COLOR.PANEL_ALT[1], S.COLOR.PANEL_ALT[2], S.COLOR.PANEL_ALT[3], 0.55)
+            else
+                row.stripe:SetColorTexture(0, 0, 0, 0)
+            end
+
+            -- Online dot color
+            local online = GH.Communities:IsOnline(member.presence)
+            if online then
+                row.dot:SetColorTexture(
+                    S.COLOR.ONLINE[1], S.COLOR.ONLINE[2], S.COLOR.ONLINE[3], 1)
+            else
+                row.dot:SetColorTexture(
+                    S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 1)
+            end
+
+            -- Name with class color
+            local r, g, b = ClassColorFromId(member.classID)
+            row.nameFS:SetText(member.name or "")
+            row.nameFS:SetTextColor(r, g, b)
+
+            -- Level
+            row.lvlFS:SetText(member.level and tostring(member.level) or "")
+            row.lvlFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+            -- Role
+            local roleLabel = ROLE_LABELS[member.role] or "Member"
+            row.roleFS:SetText(roleLabel)
+            row.roleFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+            -- Zone
+            row.zoneFS:SetText(member.zone or "")
+            row.zoneFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+            row:Show()
+            _rosterActiveRows[#_rosterActiveRows + 1] = row
+        end
+    end
+
+    sc:SetHeight(math.max(rowY, 10))
+end
+
+-- Stub implementations for remaining panels (filled in Tasks 5–6)
 function UI:_CreateCommunityChatPanel(_parent)   end
 function UI:_CreateCommunityFinderPanel(_parent) end
-function UI:_RefreshCommunityRoster()            end
 function UI:_RefreshCommunityChat()              end
 function UI:_HideCommunityFinder()               end
 function UI:ShowCommunityFinder()                end
