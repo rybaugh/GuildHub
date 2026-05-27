@@ -8,7 +8,7 @@ GH.Permissions = GH.Permissions or {}
 local P  = GH.Permissions
 
 -- Flag slot indices returned by GuildControlGetRankFlags.
--- Indices 3 and 4 (officer chat) are confirmed by the prior DetectOfficerThreshold code.
+-- Indices 3 and 4 (officer chat) are confirmed; others match the WoW Guild Control UI order.
 -- Others match the WoW Guild Control UI order; adjust if a specific check misbehaves.
 GH.PERM = {
     GUILD_CHAT_LISTEN   = 1,

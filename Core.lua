@@ -112,9 +112,8 @@ function GH:CanGuildPromote(targetRankIndex)
     if myRankIndex == nil then return false end
     if myRankIndex == 0 then return true end
     if targetRankIndex ~= nil and myRankIndex >= targetRankIndex then return false end
-    local ok = HasRankFlag(myRankIndex, 8)
-    if rawget(_G, "GuildControlGetRankFlags") then return ok end
-    return GH:IsOfficer()
+    if not rawget(_G, "GuildControlGetRankFlags") then return GH:IsOfficer() end
+    return HasRankFlag(myRankIndex, 8)
 end
 
 -- Returns true if the current player can demote the given target.
@@ -123,9 +122,8 @@ function GH:CanGuildDemote(targetRankIndex)
     if myRankIndex == nil then return false end
     if myRankIndex == 0 then return true end
     if targetRankIndex ~= nil and myRankIndex >= targetRankIndex then return false end
-    local ok = HasRankFlag(myRankIndex, 9)
-    if rawget(_G, "GuildControlGetRankFlags") then return ok end
-    return GH:IsOfficer()
+    if not rawget(_G, "GuildControlGetRankFlags") then return GH:IsOfficer() end
+    return HasRankFlag(myRankIndex, 9)
 end
 
 -- Returns true if the current player can kick the given target from the guild.
@@ -134,9 +132,8 @@ function GH:CanGuildKick(targetRankIndex)
     if myRankIndex == nil then return false end
     if myRankIndex == 0 then return true end
     if targetRankIndex ~= nil and myRankIndex >= targetRankIndex then return false end
-    local ok = HasRankFlag(myRankIndex, 11)
-    if rawget(_G, "GuildControlGetRankFlags") then return ok end
-    return GH:IsOfficer()
+    if not rawget(_G, "GuildControlGetRankFlags") then return GH:IsOfficer() end
+    return HasRankFlag(myRankIndex, 11)
 end
 
 -- Returns true if the player can delete, add, or remove members from a specific team.
