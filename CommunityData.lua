@@ -120,7 +120,6 @@ function CD:Initialize()
     frame:RegisterEvent("CLUB_ADDED")
     frame:RegisterEvent("CLUB_REMOVED")
     frame:RegisterEvent("CLUB_UPDATED")
-    frame:RegisterEvent("CLUB_ROSTER_UPDATE")
     frame:RegisterEvent("CLUB_MEMBER_ADDED")
     frame:RegisterEvent("CLUB_MEMBER_REMOVED")
     frame:RegisterEvent("CLUB_MEMBER_UPDATED")
@@ -138,7 +137,7 @@ function CD:OnEvent(event, ...)
         if GH.UI and GH.UI.OnCommunitiesChanged then
             GH.UI:OnCommunitiesChanged(event)
         end
-    elseif event == "CLUB_ROSTER_UPDATE"   or event == "CLUB_MEMBER_ADDED"
+    elseif event == "CLUB_MEMBER_ADDED"
         or event == "CLUB_MEMBER_REMOVED"  or event == "CLUB_MEMBER_UPDATED" then
         if GH.UI and GH.UI.OnCommunityRosterUpdate then
             GH.UI:OnCommunityRosterUpdate(...)
