@@ -114,18 +114,25 @@ function CD:CreateCommunity(name, shortName, description)
           0, Enum.ClubType.BattleNet)
 end
 
+local function TryRegister(frame, event)
+    local ok = pcall(frame.RegisterEvent, frame, event)
+    if not ok then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff4444GuildHub:|r Unknown event skipped: " .. event)
+    end
+end
+
 function CD:Initialize()
     if not (C_Club and C_Club.GetSubscribedClubs) then return end   -- guard: Classic / API not present
     local frame = CreateFrame("Frame")
-    frame:RegisterEvent("CLUB_ADDED")
-    frame:RegisterEvent("CLUB_REMOVED")
-    frame:RegisterEvent("CLUB_UPDATED")
-    frame:RegisterEvent("CLUB_MEMBER_ADDED")
-    frame:RegisterEvent("CLUB_MEMBER_REMOVED")
-    frame:RegisterEvent("CLUB_MEMBER_UPDATED")
-    frame:RegisterEvent("CLUB_MESSAGE_ADDED")
-    frame:RegisterEvent("CLUB_MESSAGE_HISTORY_RECEIVED")
-    frame:RegisterEvent("CLUB_FINDER_CLUBS_LOADED")
+    TryRegister(frame, "CLUB_ADDED")
+    TryRegister(frame, "CLUB_REMOVED")
+    TryRegister(frame, "CLUB_UPDATED")
+    TryRegister(frame, "CLUB_MEMBER_ADDED")
+    TryRegister(frame, "CLUB_MEMBER_REMOVED")
+    TryRegister(frame, "CLUB_MEMBER_UPDATED")
+    TryRegister(frame, "CLUB_MESSAGE_ADDED")
+    TryRegister(frame, "CLUB_MESSAGE_HISTORY_RECEIVED")
+    TryRegister(frame, "CLUB_FINDER_RECRUIT_LIST_LOADED")
     frame:SetScript("OnEvent", function(_, event, ...)
         CD:OnEvent(event, ...)
     end)
@@ -150,7 +157,7 @@ function CD:OnEvent(event, ...)
         if GH.UI and GH.UI.OnCommunityHistoryReceived then
             GH.UI:OnCommunityHistoryReceived(...)
         end
-    elseif event == "CLUB_FINDER_CLUBS_LOADED" then
+    elseif event == "CLUB_FINDER_RECRUIT_LIST_LOADED" then
         CD:CacheFinderResults()
         if GH.UI and GH.UI.OnClubFinderLoaded then
             GH.UI:OnClubFinderLoaded()
