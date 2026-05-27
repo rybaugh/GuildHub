@@ -115,7 +115,7 @@ function CD:CreateCommunity(name, shortName, description)
 end
 
 function CD:Initialize()
-    if not C_Club then return end   -- guard: Classic / API not present
+    if not (C_Club and C_Club.GetSubscribedClubs) then return end   -- guard: Classic / API not present
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("CLUB_ADDED")
     frame:RegisterEvent("CLUB_REMOVED")
