@@ -634,6 +634,90 @@ function UI:ShowBanDialog(name, memberData)
     eb:SetScript("OnEnterPressed", DoBan)
 end
 
+function UI:ShowGuildNoteDialog(member)
+    local dlg = rawget(_G, "GuildHubGuildNoteDialog")
+    if not dlg then
+        dlg = CreateFrame("Frame", "GuildHubGuildNoteDialog", UIParent)
+        dlg:SetSize(380, 145)
+        dlg:SetFrameStrata("DIALOG")
+        dlg:SetPoint("CENTER")
+        S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
+    end
+    dlg:Show()
+    for i = dlg:GetNumChildren(), 1, -1 do select(i, dlg:GetChildren()):Hide() end
+
+    local title = S:FS(dlg, "OVERLAY", "normal")
+    title:SetPoint("TOP", dlg, "TOP", 0, -12)
+    title:SetText("Guild note for |cffffd700" .. member.name .. "|r")
+    title:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+    title:Show()
+
+    local subtitle = S:FS(dlg, "OVERLAY")
+    subtitle:SetPoint("TOP", title, "BOTTOM", 0, -2)
+    subtitle:SetText("Visible to all guild members")
+    subtitle:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    subtitle:Show()
+
+    local eb = S:EditBox(dlg, 340, 26, 31)
+    eb:SetPoint("TOP", subtitle, "BOTTOM", 0, -8)
+    eb:SetText(member.note or "")
+    eb:SetCursorPosition(0)
+    eb:SetFocus()
+    eb:Show()
+
+    local counter = S:FS(dlg, "OVERLAY")
+    counter:SetPoint("TOPRIGHT", eb, "BOTTOMRIGHT", 0, -3)
+    local function UpdateCounter()
+        local len = #eb:GetText()
+        counter:SetText(len .. "/31")
+        if len > 31 then
+            counter:SetTextColor(S.COLOR.RED[1], S.COLOR.RED[2], S.COLOR.RED[3])
+        else
+            counter:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+        end
+    end
+    UpdateCounter()
+    counter:Show()
+    eb:SetScript("OnTextChanged", UpdateCounter)
+
+    local saveBtn = S:Button(dlg, "Save", 80, 26)
+    saveBtn:SetPoint("BOTTOMLEFT", dlg, "BOTTOMLEFT", 30, 10)
+    saveBtn:Show()
+
+    local cancelBtn = S:DangerButton(dlg, "Cancel", 80, 26)
+    cancelBtn:SetPoint("BOTTOMRIGHT", dlg, "BOTTOMRIGHT", -30, 10)
+    cancelBtn:Show()
+
+    local function DoSave()
+        local note = eb:GetText():match("^%s*(.-)%s*$"):sub(1, 31)
+        local idx = member.rosterIndex
+        for _, m in ipairs(GH.GuildData:GetMembers()) do
+            if m.fullName == member.fullName then
+                idx = m.rosterIndex
+                m.note = note
+                break
+            end
+        end
+        if idx then pcall(GuildRosterSetPublicNote, idx, note) end
+        if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
+        dlg:Hide()
+        UI:RefreshMembersTab()
+        if UI.ProfilePanel and UI.ProfilePanel:IsShown()
+                and UI.ProfilePanel.currentName == member.fullName then
+            for _, m in ipairs(GH.GuildData:GetMembers()) do
+                if m.fullName == member.fullName then
+                    UI:ShowProfilePanel(m)
+                    break
+                end
+            end
+        end
+    end
+
+    saveBtn:SetScript("OnClick", DoSave)
+    cancelBtn:SetScript("OnClick", function() dlg:Hide() end)
+    eb:SetScript("OnEnterPressed", DoSave)
+end
+
 function UI:ShowAddAltDialog(mainName, mainMemberData)
     local members = GH.GuildData:GetMembers()
     local ITEM_H  = 28
