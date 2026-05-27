@@ -2,7 +2,7 @@
 ## Title: GuildHub
 ## Notes: Modern guild social window — members, group presets, persistent chats, events, and recruitment
 ## Author: Storm
-## Version: 1.0
+## Version: 0.80
 ## SavedVariables: GuildHubDB
 
 Library/BNetChatThrottleLib.lua

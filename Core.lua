@@ -2,7 +2,7 @@
 GuildHub = GuildHub or {}
 local GH = GuildHub
 
-GH.VERSION = "1.0"
+GH.VERSION = "0.80"
 GH.ADDON_NAME = "GuildHub"
 GH.ADDON_PREFIX = "GuildHub"
 
