@@ -679,8 +679,340 @@ function UI:_RefreshCommunityChat()
     end
 end
 
--- Stub implementations for remaining panels (filled in Task 6)
-function UI:_CreateCommunityFinderPanel(_) end
-function UI:_HideCommunityFinder()               end
-function UI:ShowCommunityFinder()                end
-function UI:_PopulateFinderResults()             end
+-- ── Finder panel ─────────────────────────────────────────────────────────────
+
+local _finderResultRows  = {}
+local _expandedResultIdx = nil
+
+local function AcquireFinderRow(parent)
+    local row = table.remove(_finderResultRows)
+    if row then row:SetParent(parent); return row end
+
+    row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(44)
+
+    local bg = row:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    row.bg = bg
+
+    local namefs = S:FS(row, "OVERLAY", "normal")
+    namefs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -6)
+    namefs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -120, -6)
+    namefs:SetJustifyH("LEFT")
+    namefs:SetWordWrap(false)
+    row.namefs = namefs
+
+    local countfs = S:FS(row, "OVERLAY")
+    countfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -6)
+    countfs:SetJustifyH("RIGHT")
+    row.countfs = countfs
+
+    local descfs = S:FS(row, "OVERLAY")
+    descfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -24)
+    descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -120, -24)
+    descfs:SetJustifyH("LEFT")
+    descfs:SetWordWrap(true)
+    descfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    row.descfs = descfs
+
+    local applyBtn = S:Button(row, "Apply", 72, 24)
+    applyBtn:SetPoint("RIGHT", row, "RIGHT", -10, 0)
+    applyBtn:Hide()
+    row.applyBtn = applyBtn
+
+    local commentBox = S:EditBox(row, 160, 22, 255)
+    commentBox:SetPoint("RIGHT", applyBtn, "LEFT", -6, 0)
+    commentBox:Hide()
+    row.commentBox = commentBox
+
+    local commentHint = S:FS(commentBox, "OVERLAY")
+    commentHint:SetPoint("LEFT", commentBox, "LEFT", 6, 0)
+    commentHint:SetText("Add a comment…")
+    commentHint:SetTextColor(0.35, 0.35, 0.45)
+    commentBox:SetScript("OnEditFocusGained", function() commentHint:Hide() end)
+    commentBox:SetScript("OnEditFocusLost", function()
+        if commentBox:GetText() == "" then commentHint:Show() end
+    end)
+    row.commentHint = commentHint
+
+    return row
+end
+
+local function ReleaseFinderRow(row)
+    row:Hide()
+    _finderResultRows[#_finderResultRows + 1] = row
+end
+
+local _activeFinderRows = {}
+
+function UI:_CreateCommunityFinderPanel(parent)
+    local panel = CreateFrame("Frame", nil, parent)
+    panel:SetAllPoints(parent)
+    panel:Hide()
+    UI.CommunitiesTab.finderPanel = panel
+
+    -- Background
+    S:Bg(panel, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 1)
+
+    -- Header bar
+    local hdr = CreateFrame("Frame", nil, panel)
+    hdr:SetPoint("TOPLEFT",  panel, "TOPLEFT",  0, 0)
+    hdr:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
+    hdr:SetHeight(44)
+    S:GradientBg(hdr, "VERTICAL",
+        S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
+        S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
+
+    local backBtn = S:Button(hdr, "← Back", 70, 26)
+    backBtn:SetPoint("LEFT", hdr, "LEFT", 10, 0)
+    backBtn:SetScript("OnClick", function() UI:_HideCommunityFinder() end)
+
+    local hdrTitle = S:FS(hdr, "OVERLAY", "large")
+    hdrTitle:SetPoint("CENTER", hdr, "CENTER")
+    hdrTitle:SetText("Find a Community")
+    hdrTitle:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+
+    local hdrDiv = hdr:CreateTexture(nil, "ARTWORK")
+    hdrDiv:SetPoint("BOTTOMLEFT",  hdr, "BOTTOMLEFT")
+    hdrDiv:SetPoint("BOTTOMRIGHT", hdr, "BOTTOMRIGHT")
+    hdrDiv:SetHeight(1)
+    hdrDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.5)
+
+    -- Search bar row
+    local searchRow = CreateFrame("Frame", nil, panel)
+    searchRow:SetPoint("TOPLEFT",  panel, "TOPLEFT",  10, -54)
+    searchRow:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -54)
+    searchRow:SetHeight(30)
+
+    local searchBox = S:EditBox(searchRow, 0, 26, 128)
+    searchBox:SetPoint("LEFT",  searchRow, "LEFT",  0, 0)
+    searchBox:SetPoint("RIGHT", searchRow, "RIGHT", -180, 0)
+    local sHint = S:FS(searchBox, "OVERLAY")
+    sHint:SetPoint("LEFT", searchBox, "LEFT", 6, 0)
+    sHint:SetText("Search communities…")
+    sHint:SetTextColor(0.35, 0.35, 0.45)
+    searchBox:SetScript("OnEditFocusGained", function() sHint:Hide() end)
+    searchBox:SetScript("OnEditFocusLost", function()
+        if searchBox:GetText() == "" then sHint:Show() end
+    end)
+    panel.searchBox = searchBox
+
+    local searchBtn = S:Button(searchRow, "Search", 72, 26)
+    searchBtn:SetPoint("LEFT", searchBox, "RIGHT", 6, 0)
+
+    local createBtn = S:Button(searchRow, "Create Community", 130, 26)
+    createBtn:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
+    createBtn:SetScript("OnClick", function()
+        UI:_ShowCreateCommunityDialog()
+    end)
+
+    local statusFS = S:FS(searchRow, "OVERLAY")
+    statusFS:SetPoint("LEFT", searchBtn, "RIGHT", 10, 0)
+    statusFS:SetPoint("RIGHT", createBtn, "LEFT", -6, 0)
+    statusFS:SetJustifyH("LEFT")
+    statusFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    panel.statusFS = statusFS
+
+    local function DoSearch()
+        local term = searchBox:GetText():match("^%s*(.-)%s*$")
+        statusFS:SetText("Searching…")
+        GH.Communities:SearchFinder(term)
+    end
+    searchBtn:SetScript("OnClick", DoSearch)
+    searchBox:SetScript("OnEnterPressed", function(eb) DoSearch(); eb:ClearFocus() end)
+    searchBox:SetScript("OnEscapePressed", function(eb) eb:ClearFocus() end)
+
+    -- Results scroll frame
+    local sf = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -94)
+    sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
+
+    local sc = CreateFrame("Frame", nil, sf)
+    sc:SetHeight(10)
+    sf:SetScrollChild(sc)
+    local function SyncW() sc:SetWidth(math.max(sf:GetWidth(), 1)) end
+    sf:SetScript("OnSizeChanged", SyncW)
+    C_Timer.After(0, SyncW)
+
+    panel.resultsScrollContent = sc
+end
+
+function UI:ShowCommunityFinder()
+    local frame = UI.CommunitiesTab
+    if not frame then return end
+    if frame.rosterPanel then frame.rosterPanel:Hide() end
+    if frame.chatPanel   then frame.chatPanel:Hide()   end
+    if frame.splitDiv    then frame.splitDiv:Hide()    end
+    if frame.finderPanel then frame.finderPanel:Show() end
+    _expandedResultIdx = nil
+end
+
+function UI:_HideCommunityFinder()
+    local frame = UI.CommunitiesTab
+    if not frame then return end
+    if frame.finderPanel then frame.finderPanel:Hide() end
+    if frame.rosterPanel then frame.rosterPanel:Show() end
+    if frame.chatPanel   then frame.chatPanel:Show()   end
+    if frame.splitDiv    then frame.splitDiv:Show()    end
+end
+
+function UI:_PopulateFinderResults()
+    local frame = UI.CommunitiesTab
+    local panel = frame and frame.finderPanel
+    if not panel or not panel:IsShown() then return end
+
+    -- Release existing rows
+    for _, row in ipairs(_activeFinderRows) do ReleaseFinderRow(row) end
+    _activeFinderRows = {}
+
+    local results = GH.Communities._finderResults or {}
+    panel.statusFS:SetText(#results > 0 and (#results .. " results") or "No communities found.")
+
+    local sc   = panel.resultsScrollContent
+    local rowY = 0
+
+    for idx, club in ipairs(results) do
+        local row = AcquireFinderRow(sc)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT",  sc, "TOPLEFT",  0, -rowY)
+        row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -rowY)
+
+        local isExpanded = (idx == _expandedResultIdx)
+        local rowH = isExpanded and 80 or 44
+        row:SetHeight(rowH)
+
+        -- Alternating stripe
+        if idx % 2 == 0 then
+            row.bg:SetColorTexture(
+                S.COLOR.PANEL_ALT[1], S.COLOR.PANEL_ALT[2], S.COLOR.PANEL_ALT[3], 0.55)
+        else
+            row.bg:SetColorTexture(0, 0, 0, 0)
+        end
+
+        row.namefs:SetText(club.name or "Unknown")
+        row.namefs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+        row.countfs:SetText((club.memberCount or 0) .. " members")
+        row.countfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+        local desc = (club.description or ""):sub(1, isExpanded and 200 or 80)
+        if not isExpanded and #(club.description or "") > 80 then desc = desc .. "…" end
+        row.descfs:SetText(desc)
+
+        row.applyBtn:SetShown(isExpanded)
+        row.commentBox:SetShown(isExpanded)
+        row.commentHint:SetShown(isExpanded and row.commentBox:GetText() == "")
+
+        -- Click row to expand/collapse
+        local capturedIdx  = idx
+        local capturedGUID = club.clubFinderGUID
+        row:SetScript("OnMouseUp", function()
+            _expandedResultIdx = (capturedIdx == _expandedResultIdx) and nil or capturedIdx
+            UI:_PopulateFinderResults()
+        end)
+
+        -- Apply button
+        row.applyBtn:SetScript("OnClick", function()
+            local comment = row.commentBox:GetText():match("^%s*(.-)%s*$")
+            GH.Communities:ApplyToClub(capturedGUID, comment)
+            row.applyBtn:SetText("Applied!")
+            row.applyBtn:Disable()
+            C_Timer.After(3, function() row.applyBtn:SetText("Apply"); row.applyBtn:Enable() end)
+        end)
+
+        rowY = rowY + rowH + 2
+        row:Show()
+        _activeFinderRows[#_activeFinderRows + 1] = row
+    end
+
+    sc:SetHeight(math.max(rowY, 10))
+end
+
+-- ── Create Community dialog ───────────────────────────────────────────────────
+
+function UI:_ShowCreateCommunityDialog()
+    local dlg = rawget(_G, "GuildHubCreateCommunityDialog")
+    if dlg then dlg:Show(); return end
+
+    dlg = CreateFrame("Frame", "GuildHubCreateCommunityDialog", UIParent)
+    dlg:SetSize(400, 260)
+    dlg:SetPoint("CENTER", UIParent, "CENTER")
+    dlg:SetFrameStrata("DIALOG")
+    dlg:SetMovable(true)
+    dlg:EnableMouse(true)
+    dlg:SetScript("OnMouseDown", function() dlg:StartMoving() end)
+    dlg:SetScript("OnMouseUp",   function() dlg:StopMovingOrSizing() end)
+    tinsert(UISpecialFrames, "GuildHubCreateCommunityDialog")
+
+    S:Bg(dlg, S.COLOR.BG[1], S.COLOR.BG[2], S.COLOR.BG[3], 0.97)
+
+    -- Border
+    local function EdgeLine(p1, p2, isHoriz)
+        local t = dlg:CreateTexture(nil, "BORDER")
+        t:SetPoint(p1, dlg, p1); t:SetPoint(p2, dlg, p2)
+        if isHoriz then t:SetHeight(1) else t:SetWidth(1) end
+        t:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.55)
+    end
+    EdgeLine("TOPLEFT", "TOPRIGHT", true); EdgeLine("BOTTOMLEFT", "BOTTOMRIGHT", true)
+    EdgeLine("TOPLEFT", "BOTTOMLEFT", false); EdgeLine("TOPRIGHT", "BOTTOMRIGHT", false)
+
+    -- Title bar
+    local titleBar = CreateFrame("Frame", nil, dlg)
+    titleBar:SetPoint("TOPLEFT", dlg, "TOPLEFT"); titleBar:SetPoint("TOPRIGHT", dlg, "TOPRIGHT")
+    titleBar:SetHeight(34)
+    S:GradientBg(titleBar, "VERTICAL",
+        S.COLOR.TITLE_TOP[1], S.COLOR.TITLE_TOP[2], S.COLOR.TITLE_TOP[3], 1,
+        S.COLOR.TITLE_BOT[1], S.COLOR.TITLE_BOT[2], S.COLOR.TITLE_BOT[3], 1)
+
+    local titleFS = S:FS(titleBar, "OVERLAY", "normal")
+    titleFS:SetPoint("CENTER", titleBar, "CENTER")
+    titleFS:SetText("Create Community")
+    titleFS:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+
+    local closeX = CreateFrame("Button", nil, titleBar, "UIPanelCloseButton")
+    closeX:SetPoint("RIGHT", titleBar, "RIGHT", 2, 0)
+    closeX:SetSize(28, 28)
+    closeX:SetScript("OnClick", function() dlg:Hide() end)
+
+    -- Fields
+    local function MakeField(label, yOff, maxLen, hint)
+        local lbl = S:FS(dlg, "OVERLAY")
+        lbl:SetPoint("TOPLEFT", dlg, "TOPLEFT", 16, yOff)
+        lbl:SetText(label)
+        lbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+        local eb = S:EditBox(dlg, 340, 24, maxLen)
+        eb:SetPoint("TOPLEFT", dlg, "TOPLEFT", 16, yOff - 18)
+        if hint then
+            local h = S:FS(eb, "OVERLAY")
+            h:SetPoint("LEFT", eb, "LEFT", 6, 0)
+            h:SetText(hint); h:SetTextColor(0.35, 0.35, 0.45)
+            eb:SetScript("OnEditFocusGained", function() h:Hide() end)
+            eb:SetScript("OnEditFocusLost", function()
+                if eb:GetText() == "" then h:Show() end
+            end)
+        end
+        return eb
+    end
+
+    local nameEB  = MakeField("Name", -44, 64, "Community name…")
+    local shortEB = MakeField("Short Name (optional)", -100, 24, "Abbreviated…")
+    local descEB  = MakeField("Description (optional)", -156, 255, "What is this community about?")
+
+    -- Confirm / Cancel
+    local confirmBtn = S:Button(dlg, "Create", 90, 28)
+    confirmBtn:SetPoint("BOTTOMRIGHT", dlg, "BOTTOMRIGHT", -16, 12)
+    confirmBtn:SetScript("OnClick", function()
+        local name = nameEB:GetText():match("^%s*(.-)%s*$")
+        if name == "" then return end
+        local short = shortEB:GetText():match("^%s*(.-)%s*$")
+        local desc  = descEB:GetText():match("^%s*(.-)%s*$")
+        GH.Communities:CreateCommunity(name, short, desc)
+        dlg:Hide()
+    end)
+
+    local cancelBtn = S:Button(dlg, "Cancel", 80, 28)
+    cancelBtn:SetPoint("RIGHT", confirmBtn, "LEFT", -8, 0)
+    cancelBtn:SetScript("OnClick", function() dlg:Hide() end)
+
+    dlg:Show()
+end
