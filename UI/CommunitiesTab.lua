@@ -231,6 +231,7 @@ function UI:_SelectCommunity(clubId)
     _activeClubId   = clubId
     local stream    = GH.Communities:GetStream(clubId)
     _activeStreamId = stream and stream.streamId or nil
+    _chatScrolledUp = false
     UI:_RefreshSelectorHighlight()
     UI:_RefreshCommunityRoster()
     UI:_RefreshCommunityChat()
@@ -486,8 +487,9 @@ end
 
 -- ── Chat panel ────────────────────────────────────────────────────────────────
 
-local _msgRows       = {}
-local _oldestMsgId   = nil
+local _msgRows        = {}
+local _activeMsgRows  = {}
+local _oldestMsgId    = nil
 local _chatScrolledUp = false
 
 local function AcquireMsgRow(parent)
@@ -601,8 +603,6 @@ function UI:_CreateCommunityChatPanel(parent)
     end)
     panel.jumpBtn = jumpBtn
 end
-
-local _activeMsgRows = {}
 
 function UI:_RefreshCommunityChat()
     local frame = UI.CommunitiesTab
