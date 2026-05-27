@@ -5,7 +5,7 @@ local GH = GuildHub
 local S  = GH.Styles
 local UI = GH.UI
 
-local TABS = { "Members", "Activity", "Chat", "Teams", "Events", "LFM", "Recruit" }
+local TABS = { "Members", "Activity", "Chat", "Teams", "Events", "LFM", "Recruit", "Communities" }
 
 
 function UI:Initialize()
@@ -51,6 +51,7 @@ function UI:CreateMainWindow()
             "GuildHubBanDialog", "GuildHubAddAltDialog",
             "GuildHubMacroDialog", "GuildHubExportDialog",
             "GuildHubBanListWindow", "GuildHubAddBanDialog", "GuildHubEditBanDialog",
+            "GuildHubCreateCommunityDialog",
             -- Mouseover window is in UISpecialFrames; must be closed here or it
             -- blocks the WoW game menu (CloseSpecialWindows returns non-nil).
             "GuildHubMouseoverWindow",
@@ -432,6 +433,10 @@ function UI:CreateMainWindow()
         if tabName == "Recruit" and not GH:IsOfficer() then
             nb:Hide()
         end
+        -- Communities tab hidden when C_Club API is unavailable (Classic guard)
+        if tabName == "Communities" and not (C_Club and C_Club.GetSubscribedClubs) then
+            nb:Hide()
+        end
 
         -- Active state: horizontal gradient from nav-active to transparent (right edge)
         local activeBg = nb:CreateTexture(nil, "BACKGROUND")
@@ -490,6 +495,7 @@ function UI:CreateMainWindow()
                 GH.GuildRecruit:RequestApplicants()
                 UI:RefreshApplicantsList()
             end
+            if tabName == "Communities" then UI:RefreshCommunitiesTab() end
         end)
 
         navBtns[tabName] = nb
@@ -650,6 +656,7 @@ function UI:CreateMainWindow()
     UI:CreateEventsTab(content, contentW, contentH)
     UI:CreateLFMTab(content, contentW, contentH)
     UI:CreateGuildRecruitTab(content, contentW)
+    UI:CreateCommunitiesTab(content, contentW, contentH)
 
     -- Create settings page (lazy: built on first access)
     win.settingsPage = nil

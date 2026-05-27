@@ -18,6 +18,7 @@ GH.GuildRecruit = GH.GuildRecruit or {}
 GH.Profiles = GH.Profiles or {}
 GH.ProfileSync = GH.ProfileSync or {}
 GH.ActivityLog = GH.ActivityLog or {}
+GH.Communities = GH.Communities or {}
 GH.Permissions = GH.Permissions or {}
 
 function GH:Initialize()
@@ -37,6 +38,7 @@ function GH:Initialize()
     self.Profiles:Initialize()
     self.ActivityLog:Initialize()
     self.ProfileSync:Initialize()
+    self.Communities:Initialize()
     self.UI:Initialize()
 
     print("|cff7289daGuildHub|r loaded! Type |cffffd700/gh|r to open.")

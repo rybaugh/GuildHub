@@ -20,6 +20,7 @@ GuildRecruitPost.lua
 PlayerProfiles.lua
 ProfileSync.lua
 ActivityLog.lua
+CommunityData.lua
 UI/Styles.lua
 UI/MainWindow.lua
 UI/TeamsTab.lua
@@ -29,6 +30,7 @@ UI/RecruitTab.lua
 UI/GuildRecruitTab.lua
 UI/ChatTab.lua
 UI/ActivityTab.lua
+UI/CommunitiesTab.lua
 UI/ProfilePanel.lua
 UI/MouseoverWindow.lua
 UI/MacroDialog.lua
