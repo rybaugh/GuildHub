@@ -18,6 +18,7 @@ GH.GuildRecruit = GH.GuildRecruit or {}
 GH.Profiles = GH.Profiles or {}
 GH.ProfileSync = GH.ProfileSync or {}
 GH.ActivityLog = GH.ActivityLog or {}
+GH.Permissions = GH.Permissions or {}
 
 function GH:Initialize()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -25,6 +26,7 @@ function GH:Initialize()
     end
 
     self.DB:Initialize()
+    self.Permissions:Initialize()
     self.GuildData:Initialize()
     self.Groups:Initialize()
     self.Chat:Initialize()
@@ -52,49 +54,88 @@ function GH:IsGuildMaster()
     return rankIndex == 0
 end
 
--- Walks WoW guild rank flags to find the highest rank index that still has
--- officer chat access (flags 3/4 in GuildControlGetRankFlags cover speak/listen).
--- Caches the result for the session; re-detects if guild data wasn't loaded yet.
-function GH:DetectOfficerThreshold()
-    if GH._cachedOfficerThreshold then
-        return GH._cachedOfficerThreshold
-    end
-    local getNumRanks  = rawget(_G, "GuildControlGetNumRanks")
-    local getRankFlags = rawget(_G, "GuildControlGetRankFlags")
-    if not getNumRanks or not getRankFlags then return 1 end
-
-    local numRanks = getNumRanks() or 0
-    if numRanks < 2 then return 1 end  -- guild data not loaded yet; safe fallback, not cached
-
-    local threshold = 0
-    for ri = 1, numRanks - 1 do
-        pcall(function()
-            -- GuildControlGetRankFlags returns one value per permission slot.
-            -- Slots 3 and 4 correspond to officer-chat speak and listen across
-            -- the WoW versions GuildHub targets.
-            local f = { getRankFlags(ri) }
-            if f[3] == 1 or f[3] == true or f[4] == 1 or f[4] == true then
-                threshold = ri
-            end
-        end)
-    end
-    GH._cachedOfficerThreshold = threshold
-    return threshold
+function GH:IsOfficer()
+    return GH:HasPermission(GH.PERM.OFFICER_CHAT_SPEAK)
 end
 
-function GH:IsOfficer()
-    local _, _, rankIndex = GetGuildInfo("player")
-    if rankIndex == nil then return false end
-    local threshold = GH.DB and GH.DB:GetSetting("officerRankThreshold")
-    if threshold == nil then
-        threshold = GH:DetectOfficerThreshold()
-    end
-    return rankIndex <= threshold
+function GH:CanEditPublicNote()
+    return GH:HasPermission(GH.PERM.EDIT_PUBLIC_NOTE)
+end
+
+function GH:CanPromote()
+    return GH:HasPermission(GH.PERM.PROMOTE)
+end
+
+function GH:CanDemote()
+    return GH:HasPermission(GH.PERM.DEMOTE)
+end
+
+function GH:CanInvite()
+    return GH:HasPermission(GH.PERM.INVITE)
+end
+
+function GH:CanRemoveMember()
+    return GH:HasPermission(GH.PERM.REMOVE)
+end
+
+function GH:CanViewOfficerNote()
+    return GH:HasPermission(GH.PERM.VIEW_OFFICER_NOTE)
+end
+
+function GH:CanEditOfficerNote()
+    return GH:HasPermission(GH.PERM.EDIT_OFFICER_NOTE)
 end
 
 -- Returns true if the player can create teams or handle team protocol messages.
 -- Tied to the officer threshold so only ranks that see officer chat can create teams.
 function GH:CanManageTeams()
+    return GH:IsOfficer()
+end
+
+-- Checks a specific WoW guild rank permission flag for the given 0-based rankIndex.
+-- Flag indices (1-based in the returned table from GuildControlGetRankFlags):
+--   3=oChatListen, 4=oChatSpeak, 5=editPublicNote, 6=viewOfficerNote,
+--   7=editOfficerNote, 8=promoteMember, 9=demoteMember, 10=inviteMember,
+--   11=removeMember, 12=setMOTD
+local function HasRankFlag(rankIndex, flagIndex)
+    local getRankFlags = rawget(_G, "GuildControlGetRankFlags")
+    if not getRankFlags then return false end
+    local ok, flags = pcall(function() return { getRankFlags(rankIndex) } end)
+    if not (ok and flags) then return false end
+    return flags[flagIndex] == 1 or flags[flagIndex] == true
+end
+
+-- Returns true if the current player can promote the given target (by their rankIndex).
+-- Mirrors the default UI: requires the "Promote Member" flag and outranking the target.
+function GH:CanGuildPromote(targetRankIndex)
+    local _, _, myRankIndex = GetGuildInfo("player")
+    if myRankIndex == nil then return false end
+    if myRankIndex == 0 then return true end
+    if targetRankIndex ~= nil and myRankIndex >= targetRankIndex then return false end
+    local ok = HasRankFlag(myRankIndex, 8)
+    if rawget(_G, "GuildControlGetRankFlags") then return ok end
+    return GH:IsOfficer()
+end
+
+-- Returns true if the current player can demote the given target.
+function GH:CanGuildDemote(targetRankIndex)
+    local _, _, myRankIndex = GetGuildInfo("player")
+    if myRankIndex == nil then return false end
+    if myRankIndex == 0 then return true end
+    if targetRankIndex ~= nil and myRankIndex >= targetRankIndex then return false end
+    local ok = HasRankFlag(myRankIndex, 9)
+    if rawget(_G, "GuildControlGetRankFlags") then return ok end
+    return GH:IsOfficer()
+end
+
+-- Returns true if the current player can kick the given target from the guild.
+function GH:CanGuildKick(targetRankIndex)
+    local _, _, myRankIndex = GetGuildInfo("player")
+    if myRankIndex == nil then return false end
+    if myRankIndex == 0 then return true end
+    if targetRankIndex ~= nil and myRankIndex >= targetRankIndex then return false end
+    local ok = HasRankFlag(myRankIndex, 11)
+    if rawget(_G, "GuildControlGetRankFlags") then return ok end
     return GH:IsOfficer()
 end
 
