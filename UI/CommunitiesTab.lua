@@ -484,10 +484,203 @@ function UI:_RefreshCommunityRoster()
     sc:SetHeight(math.max(rowY, 10))
 end
 
--- Stub implementations for remaining panels (filled in Tasks 5–6)
-function UI:_CreateCommunityChatPanel(_parent)   end
-function UI:_CreateCommunityFinderPanel(_parent) end
-function UI:_RefreshCommunityChat()              end
+-- ── Chat panel ────────────────────────────────────────────────────────────────
+
+local _msgRows       = {}
+local _oldestMsgId   = nil
+local _chatScrolledUp = false
+
+local function AcquireMsgRow(parent)
+    local row = table.remove(_msgRows)
+    if row then row:SetParent(parent); return row end
+
+    row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(18)
+
+    local fs = S:FS(row, "OVERLAY")
+    fs:SetPoint("TOPLEFT",  row, "TOPLEFT",  6, 0)
+    fs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -6, 0)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(true)
+    row.fs = fs
+
+    return row
+end
+
+local function ReleaseMsgRow(row)
+    row:Hide()
+    _msgRows[#_msgRows + 1] = row
+end
+
+function UI:_CreateCommunityChatPanel(parent)
+    local panel = CreateFrame("Frame", nil, parent)
+    panel:SetPoint("TOPLEFT",     parent, "TOPLEFT",     ROST_W + 1, 0)
+    panel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
+    UI.CommunitiesTab.chatPanel = panel
+
+    -- Input bar (built first so message area can anchor to it)
+    local inputBar = CreateFrame("Frame", nil, panel)
+    inputBar:SetPoint("BOTTOMLEFT",  panel, "BOTTOMLEFT",  0, 0)
+    inputBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
+    inputBar:SetHeight(INP_H)
+    S:Bg(inputBar, S.COLOR.PANEL[1], S.COLOR.PANEL[2], S.COLOR.PANEL[3], 1)
+
+    local inputTopLine = inputBar:CreateTexture(nil, "ARTWORK")
+    inputTopLine:SetPoint("TOPLEFT",  inputBar, "TOPLEFT")
+    inputTopLine:SetPoint("TOPRIGHT", inputBar, "TOPRIGHT")
+    inputTopLine:SetHeight(1)
+    inputTopLine:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.6)
+
+    local inputBox = S:EditBox(inputBar, 0, 28, 255)
+    inputBox:SetPoint("LEFT",  inputBar, "LEFT",  10, 0)
+    inputBox:SetPoint("RIGHT", inputBar, "RIGHT", -96, 0)
+    panel.inputBox = inputBox
+
+    -- Placeholder text inside input box
+    local inputHint = S:FS(inputBox, "OVERLAY")
+    inputHint:SetPoint("LEFT", inputBox, "LEFT", 6, 0)
+    inputHint:SetTextColor(0.35, 0.35, 0.45)
+    panel.inputHint = inputHint
+    inputBox:SetScript("OnEditFocusGained", function() inputHint:Hide() end)
+    inputBox:SetScript("OnEditFocusLost", function()
+        if inputBox:GetText() == "" then inputHint:Show() end
+    end)
+
+    local sendBtn = S:Button(inputBar, "Send", 82, 30)
+    sendBtn:SetPoint("RIGHT", inputBar, "RIGHT", -8, 0)
+
+    local function DoSend()
+        if not (_activeClubId and _activeStreamId) then return end
+        local text = inputBox:GetText():match("^%s*(.-)%s*$")
+        if text == "" then return end
+        GH.Communities:SendMessage(_activeClubId, _activeStreamId, text)
+        inputBox:SetText("")
+        inputBox:ClearFocus()
+        inputHint:Show()
+        _chatScrolledUp = false
+        -- Small delay to let the server echo the message back via CLUB_MESSAGE_ADDED
+        C_Timer.After(0.15, function() UI:_RefreshCommunityChat() end)
+    end
+
+    sendBtn:SetScript("OnClick", DoSend)
+    inputBox:SetScript("OnEnterPressed", function(eb) DoSend(); eb:ClearFocus() end)
+    inputBox:SetScript("OnEscapePressed", function(eb) eb:ClearFocus() end)
+
+    -- Message scroll frame
+    local sf = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    sf:SetPoint("TOPLEFT",    panel, "TOPLEFT",    0, 0)
+    sf:SetPoint("BOTTOMRIGHT", inputBar, "TOPRIGHT", -20, 0)
+
+    local sc = CreateFrame("Frame", nil, sf)
+    sc:SetHeight(10)
+    sf:SetScrollChild(sc)
+    local function SyncW() sc:SetWidth(math.max(sf:GetWidth(), 1)) end
+    sf:SetScript("OnSizeChanged", SyncW)
+    C_Timer.After(0, SyncW)
+
+    -- Detect scroll-to-top for lazy loading older messages
+    sf:SetScript("OnVerticalScroll", function(_, offset)
+        _chatScrolledUp = offset < sf:GetVerticalScrollRange()
+        if offset < 20 and _activeClubId and _activeStreamId and _oldestMsgId then
+            GH.Communities:RequestOlderMessages(_activeClubId, _activeStreamId, _oldestMsgId)
+            _oldestMsgId = nil   -- prevent duplicate requests
+        end
+    end)
+
+    panel.msgScrollFrame   = sf
+    panel.msgScrollContent = sc
+
+    -- "↓ Jump to latest" button
+    local jumpBtn = S:Button(panel, "↓ Latest", 80, 22)
+    jumpBtn:SetPoint("BOTTOMRIGHT", sf, "BOTTOMRIGHT", 0, 4)
+    jumpBtn:Hide()
+    jumpBtn:SetScript("OnClick", function()
+        sf:SetVerticalScroll(sf:GetVerticalScrollRange())
+        _chatScrolledUp = false
+        jumpBtn:Hide()
+    end)
+    panel.jumpBtn = jumpBtn
+end
+
+local _activeMsgRows = {}
+
+function UI:_RefreshCommunityChat()
+    local frame = UI.CommunitiesTab
+    local panel = frame and frame.chatPanel
+    if not panel then return end
+
+    -- Release existing rows
+    for _, row in ipairs(_activeMsgRows) do ReleaseMsgRow(row) end
+    _activeMsgRows = {}
+
+    -- Update input placeholder with community name
+    if panel.inputHint then
+        local clubInfo = _activeClubId and C_Club and C_Club.GetClubInfo
+                         and C_Club.GetClubInfo(_activeClubId)
+        local cName = (clubInfo and clubInfo.name) or "community"
+        panel.inputHint:SetText("Message " .. cName .. "…")
+        if panel.inputBox and panel.inputBox:GetText() == "" then
+            panel.inputHint:Show()
+        end
+    end
+
+    if not (_activeClubId and _activeStreamId) then return end
+
+    local messages = GH.Communities:GetMessages(_activeClubId, _activeStreamId)
+    local sc       = panel.msgScrollContent
+    local rowY     = 0
+    _oldestMsgId   = nil
+
+    for idx, msg in ipairs(messages) do
+        if not msg.destroyed and msg.content and msg.content ~= "" then
+            -- Track oldest message for lazy-load paging
+            if idx == 1 then _oldestMsgId = msg.id end
+
+            local row = AcquireMsgRow(sc)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT",  sc, "TOPLEFT",  0, -rowY)
+            row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -rowY)
+
+            -- Build message line
+            local timeStr = (msg.id and msg.id.epoch)
+                            and GH:FormatTime(msg.id.epoch) or ""
+            local author  = msg.author
+            local aName   = (author and author.name) or "Unknown"
+            local r, g, b = ClassColorFromId(author and author.classID or 0)
+            local nameTag = string.format("|cff%02x%02x%02x%s|r",
+                math.floor(r * 255), math.floor(g * 255), math.floor(b * 255), aName)
+            local fullLine = "|cff888899[" .. timeStr .. "]|r  " .. nameTag .. ":  " .. msg.content
+
+            row.fs:SetText(fullLine)
+            row.fs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+
+            -- Dynamic row height based on wrapped text
+            local lineH = math.max(18, row.fs:GetStringHeight() + 4)
+            row:SetHeight(lineH)
+            row:Show()
+            rowY = rowY + lineH
+            _activeMsgRows[#_activeMsgRows + 1] = row
+        end
+    end
+
+    sc:SetHeight(math.max(rowY, 10))
+
+    -- Scroll to bottom unless user has scrolled up
+    if not _chatScrolledUp then
+        C_Timer.After(0, function()
+            if panel.msgScrollFrame then
+                panel.msgScrollFrame:SetVerticalScroll(
+                    panel.msgScrollFrame:GetVerticalScrollRange())
+            end
+        end)
+        if panel.jumpBtn then panel.jumpBtn:Hide() end
+    else
+        if panel.jumpBtn then panel.jumpBtn:Show() end
+    end
+end
+
+-- Stub implementations for remaining panels (filled in Task 6)
+function UI:_CreateCommunityFinderPanel(_) end
 function UI:_HideCommunityFinder()               end
 function UI:ShowCommunityFinder()                end
 function UI:_PopulateFinderResults()             end
