@@ -739,6 +739,10 @@ local function AcquireFinderRow(parent)
 end
 
 local function ReleaseFinderRow(row)
+    row.applyBtn:SetText("Apply")
+    row.applyBtn:Enable()
+    row.commentBox:SetText("")
+    row.commentHint:Show()
     row:Hide()
     _finderResultRows[#_finderResultRows + 1] = row
 end
@@ -845,6 +849,7 @@ function UI:ShowCommunityFinder()
     if frame.splitDiv    then frame.splitDiv:Hide()    end
     if frame.finderPanel then frame.finderPanel:Show() end
     _expandedResultIdx = nil
+    UI:_PopulateFinderResults()
 end
 
 function UI:_HideCommunityFinder()
