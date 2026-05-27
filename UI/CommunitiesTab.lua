@@ -148,6 +148,10 @@ function UI:CreateCommunitiesTab(parent)
     splitDiv:SetPoint("BOTTOMLEFT", mainArea, "BOTTOMLEFT", ROST_W, 0)
     splitDiv:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.5)
     frame.splitDiv = splitDiv   -- referenced by ShowCommunityFinder / _HideCommunityFinder
+
+    frame:SetScript("OnShow", function()
+        UI:RefreshCommunitiesTab()
+    end)
 end
 
 -- ── Selector bar helpers ──────────────────────────────────────────────────────
