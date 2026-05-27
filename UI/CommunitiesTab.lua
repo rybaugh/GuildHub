@@ -756,6 +756,7 @@ local _activeFinderRows = {}
 function UI:_CreateCommunityFinderPanel(parent)
     local panel = CreateFrame("Frame", nil, parent)
     panel:SetAllPoints(parent)
+    panel:EnableMouse(true)
     panel:Hide()
     UI.CommunitiesTab.finderPanel = panel
 
@@ -848,10 +849,12 @@ end
 function UI:ShowCommunityFinder()
     local frame = UI.CommunitiesTab
     if not frame then return end
-    if frame.rosterPanel then frame.rosterPanel:Hide() end
-    if frame.chatPanel   then frame.chatPanel:Hide()   end
-    if frame.splitDiv    then frame.splitDiv:Hide()    end
-    if frame.finderPanel then frame.finderPanel:Show() end
+    if frame.rosterPanel  then frame.rosterPanel:Hide()  end
+    if frame.chatPanel    then frame.chatPanel:Hide()    end
+    if frame.splitDiv     then frame.splitDiv:Hide()     end
+    if frame.emptyFS      then frame.emptyFS:Hide()      end
+    if frame.emptyFindBtn then frame.emptyFindBtn:Hide() end
+    if frame.finderPanel  then frame.finderPanel:Show()  end
     _expandedResultIdx = nil
     UI:_PopulateFinderResults()
 end
@@ -860,9 +863,13 @@ function UI:_HideCommunityFinder()
     local frame = UI.CommunitiesTab
     if not frame then return end
     if frame.finderPanel then frame.finderPanel:Hide() end
-    if frame.rosterPanel then frame.rosterPanel:Show() end
-    if frame.chatPanel   then frame.chatPanel:Show()   end
-    if frame.splitDiv    then frame.splitDiv:Show()    end
+    -- Restore roster/chat only when there's an active community
+    local hasClubs = _activeClubId ~= nil
+    if frame.rosterPanel  then frame.rosterPanel:SetShown(hasClubs)  end
+    if frame.chatPanel    then frame.chatPanel:SetShown(hasClubs)    end
+    if frame.splitDiv     then frame.splitDiv:SetShown(hasClubs)     end
+    if frame.emptyFS      then frame.emptyFS:SetShown(not hasClubs)  end
+    if frame.emptyFindBtn then frame.emptyFindBtn:SetShown(not hasClubs) end
 end
 
 function UI:_PopulateFinderResults()
