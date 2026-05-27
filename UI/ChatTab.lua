@@ -760,9 +760,11 @@ function UI:RefreshChatMembersPanel(channelId)
 
     elseif channelId == OfficerId() then
         title = "Officers"
-        local threshold = GH.DB:GetSetting("officerRankThreshold") or 1
         for _, m in ipairs(GH.GuildData:GetMembers("")) do
-            if (m.rankIndex or 999) <= threshold then
+            local ri = m.rankIndex or 999
+            local flags = GH._rankFlags[ri]
+            local isOff = ri == 0 or (flags and (flags[GH.PERM.OFFICER_CHAT_SPEAK] == 1 or flags[GH.PERM.OFFICER_CHAT_SPEAK] == true))
+            if isOff then
                 members[#members + 1] = { name = m.name, info = m, online = m.online }
             end
         end
