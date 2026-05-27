@@ -5,7 +5,7 @@ local GH = GuildHub
 local S  = GH.Styles
 local UI = GH.UI
 
-local TABS = { "Members", "Activity", "Chat", "Teams", "Events", "LFM", "Recruit", "Communities" }
+local TABS = { "Members", "Chat", "Teams", "Events", "LFM", "Activity", "Recruit" }
 
 
 function UI:Initialize()
@@ -19,6 +19,12 @@ local WIN_MAX_W, WIN_MAX_H = 1800, 1100
 
 function UI:CreateMainWindow()
     local win = CreateFrame("Frame", "GuildHubMainWindow", UIParent)
+
+    -- Forward-declare locals that are referenced across closures defined at
+    -- different points in this function (title bar, HideAllTabContent, SelectTab,
+    -- and the TABS nav-button loop all share these upvalues).
+    local navBtns = {}
+    local commBtn  -- assigned in the title bar section below
 
     -- Restore the user's saved dimensions (falls back to the style defaults).
     local savedW = GH.DB:GetSetting("windowW") or S.WINDOW_W
@@ -162,6 +168,40 @@ function UI:CreateMainWindow()
     settingsBtn:SetScript("OnClick", function()
         UI:ToggleSettings()
     end)
+
+    -- Communities toggle button — in title bar, left of settings gear
+    commBtn = S:Button(titleBar, "Communities", 100, 22)
+    commBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -8, 0)
+    commBtn:SetScript("OnClick", function()
+        if UI.CommunitiesTab and UI.CommunitiesTab:IsShown() then
+            -- Deactivate: hide communities, go back to last active sidebar tab
+            HideAllTabContent()
+            if commBtn.bg then commBtn.bg:SetColorTexture(0, 0, 0, 0) end
+            SelectTab(win.activeTab or "Members")
+        else
+            -- Activate: hide everything else, show communities
+            HideAllTabContent()
+            for _, nb in pairs(navBtns) do
+                nb.activeBg:SetAlpha(0)
+                nb.accentBar:SetColorTexture(
+                    S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 0)
+                nb.label:SetTextColor(
+                    S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+            end
+            if commBtn.bg then
+                commBtn.bg:SetColorTexture(
+                    S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 0.35)
+            end
+            if UI.CommunitiesTab then UI.CommunitiesTab:Show() end
+            UI:RefreshCommunitiesTab()
+        end
+    end)
+    win.commBtn = commBtn
+
+    -- Hide the Communities button when C_Club API is unavailable (Classic guard)
+    if not (C_Club and C_Club.GetSubscribedClubs) then
+        commBtn:Hide()
+    end
 
     local function RefreshTitle()
         local guildName = GH:GetGuildName()
@@ -308,7 +348,7 @@ function UI:CreateMainWindow()
 
     -- Invite button — anchored left of the settings gear
     local inviteBtn = S:Button(titleBar, "Invite", 58, 22)
-    inviteBtn:SetPoint("RIGHT", settingsBtn, "LEFT", -10, 0)
+    inviteBtn:SetPoint("RIGHT", commBtn, "LEFT", -8, 0)
 
     -- Edit box — anchored left of the invite button
     local inviteEB = CreateFrame("EditBox", "GuildHubInviteEditBox", titleBar)
@@ -386,8 +426,7 @@ function UI:CreateMainWindow()
     content:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", 0, 0)
     win.contentArea = content
 
-    -- Nav buttons
-    local navBtns  = {}
+    -- Nav buttons (navBtns and commBtn are forward-declared at the top of CreateMainWindow)
     -- Use the live window size so tabs are sized correctly for the restored dimensions.
     local contentW = win:GetWidth()  - S.SIDEBAR_W - 1
     local contentH = win:GetHeight() - S.TITLEBAR_H
@@ -396,12 +435,15 @@ function UI:CreateMainWindow()
         for _, t in ipairs(TABS) do
             if UI[t .. "Tab"] then UI[t .. "Tab"]:Hide() end
         end
+        if UI.CommunitiesTab then UI.CommunitiesTab:Hide() end
         if win.settingsPage then win.settingsPage:Hide() end
     end
 
     local function SelectTab(tabName)
         win.activeTab = tabName
         HideAllTabContent()
+        -- Deactivate Communities header button when switching to a sidebar tab
+        if commBtn and commBtn.bg then commBtn.bg:SetColorTexture(0, 0, 0, 0) end
         for _, nb in pairs(navBtns) do
             nb.activeBg:SetAlpha(0)
             nb.accentBar:SetColorTexture(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3], 0)
@@ -433,11 +475,6 @@ function UI:CreateMainWindow()
         if tabName == "Recruit" and not GH:IsOfficer() then
             nb:Hide()
         end
-        -- Communities tab hidden when C_Club API is unavailable (Classic guard)
-        if tabName == "Communities" and not (C_Club and C_Club.GetSubscribedClubs) then
-            nb:Hide()
-        end
-
         -- Active state: horizontal gradient from nav-active to transparent (right edge)
         local activeBg = nb:CreateTexture(nil, "BACKGROUND")
         activeBg:SetAllPoints()
@@ -495,7 +532,6 @@ function UI:CreateMainWindow()
                 GH.GuildRecruit:RequestApplicants()
                 UI:RefreshApplicantsList()
             end
-            if tabName == "Communities" then UI:RefreshCommunitiesTab() end
         end)
 
         navBtns[tabName] = nb
