@@ -940,6 +940,11 @@ function UI:ShowMemberContextMenu(member)
     item("Edit Personal Note", function()
         UI:ShowPersonalNoteDialog(member.fullName)
     end)
+    if GH:CanEditPublicNote() then
+        item("Edit Guild Note", function()
+            UI:ShowGuildNoteDialog(member)
+        end)
+    end
 
     -- Roster profile actions
     if GH.DB:GetSetting("rosterProfilesEnabled") ~= false then
@@ -970,26 +975,35 @@ function UI:ShowMemberContextMenu(member)
         end)
     end
 
-    if GH:IsOfficer() then
+    local canPromote = GH:CanPromote()
+    local canDemote  = GH:CanDemote()
+    local canRemove  = GH:CanRemoveMember()
+    if canPromote or canDemote or canRemove then
         sep()
-        item("Promote", function()
-            local fn = rawget(_G, "GuildPromote")
-            if fn then fn(member.name)
-            elseif C_GuildInfo and C_GuildInfo.Promote then C_GuildInfo.Promote(member.name)
-            end
-        end)
-        item("Demote", function()
-            local fn = rawget(_G, "GuildDemote")
-            if fn then fn(member.name)
-            elseif C_GuildInfo and C_GuildInfo.Demote then C_GuildInfo.Demote(member.name)
-            end
-        end)
-        item("Kick from Guild", function()
-            local fn = rawget(_G, "GuildUninvite")
-            if fn then fn(member.name)
-            elseif C_GuildInfo and C_GuildInfo.KickMember then C_GuildInfo.KickMember(member.name)
-            end
-        end, true)
+        if canPromote then
+            item("Promote", function()
+                local fn = rawget(_G, "GuildPromote")
+                if fn then fn(member.name)
+                elseif C_GuildInfo and C_GuildInfo.Promote then C_GuildInfo.Promote(member.name)
+                end
+            end)
+        end
+        if canDemote then
+            item("Demote", function()
+                local fn = rawget(_G, "GuildDemote")
+                if fn then fn(member.name)
+                elseif C_GuildInfo and C_GuildInfo.Demote then C_GuildInfo.Demote(member.name)
+                end
+            end)
+        end
+        if canRemove then
+            item("Kick from Guild", function()
+                local fn = rawget(_G, "GuildUninvite")
+                if fn then fn(member.name)
+                elseif C_GuildInfo and C_GuildInfo.KickMember then C_GuildInfo.KickMember(member.name)
+                end
+            end, true)
+        end
     end
 
     -- Measure height.
