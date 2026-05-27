@@ -36,14 +36,14 @@ function UI:CreateProfilePanel(parent)
 
     local nameLabel = S:FS(header, "OVERLAY", "normal")
     nameLabel:SetPoint("LEFT",  header, "LEFT",  12,  9)
-    nameLabel:SetPoint("RIGHT", header, "RIGHT", -28, 9)
+    nameLabel:SetPoint("RIGHT", header, "RIGHT", -82, 9)
     nameLabel:SetJustifyH("LEFT")
     nameLabel:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
     panel.nameLabel = nameLabel
 
     local realmLabel = S:FS(header, "OVERLAY")
     realmLabel:SetPoint("LEFT",  header, "LEFT",  12,  -8)
-    realmLabel:SetPoint("RIGHT", header, "RIGHT", -28, -8)
+    realmLabel:SetPoint("RIGHT", header, "RIGHT", -82, -8)
     realmLabel:SetJustifyH("LEFT")
     realmLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     panel.realmLabel = realmLabel
@@ -51,6 +51,10 @@ function UI:CreateProfilePanel(parent)
     local closeBtn = CreateFrame("Button", nil, header, "UIPanelCloseButton")
     closeBtn:SetSize(22, 22)
     closeBtn:SetPoint("RIGHT", header, "RIGHT", -2, 0)
+
+    local inviteBtn = S:Button(header, "Invite", 50, 20)
+    inviteBtn:SetPoint("RIGHT", closeBtn, "LEFT", -4, 0)
+    panel.inviteBtn = inviteBtn
     closeBtn:SetScript("OnClick", function()
         UI._selectedMemberName = nil
         panel:Hide()
@@ -100,6 +104,7 @@ function UI:CreateProfilePanel(parent)
 
     panel.guildNoteHdr,    panel.guildNoteLine    = MakeSectionHdr("Guild Note")
     panel.guildNoteFS = MakeFS()
+    panel.editGuildNoteBtn = S:Button(content, "Edit Guild Note", PANEL_W - 30, 24)
 
     panel.personalNoteHdr, panel.personalNoteLine = MakeSectionHdr("Personal Note")
     panel.personalNoteFS = MakeFS()
@@ -182,6 +187,9 @@ function UI:CreateProfilePanel(parent)
         -- Guild Note
         placeSection(self.guildNoteHdr, self.guildNoteLine)
         placeFS(self.guildNoteFS)
+        if self.editGuildNoteBtn:IsShown() then
+            placeBtn(self.editGuildNoteBtn, 24)
+        end
 
         -- Personal Note
         placeSection(self.personalNoteHdr, self.personalNoteLine)
@@ -285,6 +293,10 @@ function UI:ShowProfilePanel(memberData)
     panel.currentName = name
     panel.nameLabel:SetText(memberData.name)
 
+    panel.inviteBtn:SetScript("OnClick", function()
+        InviteUnit(name)
+    end)
+
     local realm = memberData.fullName and memberData.fullName:match("%-(.+)$")
     if realm and realm ~= "" then
         panel.realmLabel:SetText(realm)
@@ -305,6 +317,10 @@ function UI:ShowProfilePanel(memberData)
     local guildNote = memberData.note or ""
     panel.guildNoteFS:SetText(
         guildNote ~= "" and guildNote or "|cff888888No guild note|r")
+    panel.editGuildNoteBtn:SetShown(GH:CanEditPublicNote())
+    panel.editGuildNoteBtn:SetScript("OnClick", function()
+        UI:ShowGuildNoteDialog(memberData)
+    end)
 
     -- Personal note (GuildHub private note, only visible to this player)
     local personalNote = GH.GuildData:GetPersonalNote(name) or ""
