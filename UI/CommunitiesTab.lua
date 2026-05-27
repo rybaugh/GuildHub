@@ -157,6 +157,7 @@ function UI:_UpdateCommTabScroll()
     local tabInner = frame and frame.tabInner
     if not tabInner then return end
     local clipW    = frame.tabClip:GetWidth()
+    if clipW == 0 then return end
     local innerW   = 0
     for _, entry in ipairs(_tabBtns) do
         innerW = innerW + entry.btn:GetWidth() + 4
@@ -165,7 +166,7 @@ function UI:_UpdateCommTabScroll()
     tabInner:ClearAllPoints()
     tabInner:SetPoint("TOPLEFT", frame.tabClip, "TOPLEFT", -_tabScrollX, 0)
     frame.leftArrow:SetShown(_tabScrollX > 0)
-    frame.rightArrow:SetShown(innerW > clipW and _tabScrollX < innerW - clipW)
+    frame.rightArrow:SetShown(innerW > clipW and _tabScrollX < math.max(0, innerW - clipW))
 end
 
 function UI:_RebuildSelectorBar()
