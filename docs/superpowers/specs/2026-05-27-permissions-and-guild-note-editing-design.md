@@ -27,7 +27,7 @@ Contains:
 
 - `GH.PERM` — named constants table mapping permission names to `GuildControlGetRankFlags` return indices:
 
-```
+```lua
 GUILD_CHAT_LISTEN   = 1
 GUILD_CHAT_SPEAK    = 2
 OFFICER_CHAT_LISTEN = 3
@@ -58,6 +58,7 @@ Indices 3 and 4 are confirmed. All others match the order of permissions shown i
 Remove `DetectOfficerThreshold`, `_cachedOfficerThreshold`.
 
 Redefine `GH:IsOfficer()` as a thin wrapper:
+
 ```lua
 function GH:IsOfficer()
     return GH:HasPermission(GH.PERM.OFFICER_CHAT_SPEAK)
@@ -65,6 +66,7 @@ end
 ```
 
 Add named wrappers (one-liners):
+
 ```lua
 GH:CanEditPublicNote()   → HasPermission(GH.PERM.EDIT_PUBLIC_NOTE)
 GH:CanPromote()          → HasPermission(GH.PERM.PROMOTE)
@@ -85,7 +87,7 @@ Add `self.Permissions:Initialize()` early in `GH:Initialize()`, before `self.UI:
 ### `MembersTab.lua` — `ShowMemberContextMenu`
 
 | Action | Check |
-|---|---|
+| --- | --- |
 | Whisper, Invite to Group, Edit Personal Note | always shown |
 | Set as Main, Add Alt, Ban/Unban | `GH:IsOfficer()` (addon-specific, no WoW equivalent) |
 | **Edit Guild Note** (new item) | `GH:CanEditPublicNote()` |
@@ -98,7 +100,7 @@ Macro Tool and Ban List toolbar buttons stay `GH:IsOfficer()`.
 ### `ProfilePanel.lua` — `ShowProfilePanel`
 
 | Widget | Check |
-|---|---|
+| --- | --- |
 | `setJoinDateBtn`, `saveNoteBtn` / `noteBox`, `setMainBtn`, `addAltBtn`, `removeAltBtn`, `setBdayBtn`, `banBtn`, `unbanBtn` | `GH:IsOfficer()` (addon-specific) |
 | **`editGuildNoteBtn`** (new) | `GH:CanEditPublicNote()` |
 
@@ -125,7 +127,9 @@ New dialog in `ProfilePanel.lua`, following the `ShowPersonalNoteDialog` pattern
 
 ### After-save data flow
 
-`GUILD_ROSTER_UPDATE` → `GD:Refresh()` → `member.note` updated → `UI:OnRosterRefresh()` → `UI:RefreshMembersTab()` refreshes the Note column. If the profile panel is open and showing the same member, `ShowProfilePanel` re-renders it with the new note.
+`GUILD_ROSTER_UPDATE` → `GD:Refresh()` → `member.note` updated → `UI:OnRosterRefresh()` → `UI:RefreshMembersTab()` refreshes the Note column.
+
+`OnRosterRefresh` does not re-render the profile panel, so the dialog's Save handler must explicitly call `UI:ShowProfilePanel(member)` if `UI.ProfilePanel` is shown and `panel.currentName == member.fullName`.
 
 ## TOC Change
 
