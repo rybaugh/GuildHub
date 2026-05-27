@@ -62,6 +62,30 @@ function Groups:Initialize()
         end
     end
     C_Timer.After(12, function() TrySyncRequest(1) end)
+
+    -- Officers: on login, proactively push TMSYN to online team members whose
+    -- TMCHK retry window may have already closed before this client logged in.
+    -- Fires once, 20s after login (roster is populated by then via GUILD_ROSTER_UPDATE).
+    -- Sends are staggered 200 ms apart to avoid flooding the addon message queue.
+    C_Timer.After(20, function()
+        if not GH:CanManageTeams() then return end
+        local myName = GH:GetPlayerName()
+        local delay  = 0
+        for groupId, g in pairs(GH.DB:GetGroups()) do
+            for _, memberName in ipairs(g.members or {}) do
+                if memberName ~= myName then
+                    local info = GH.GuildData:FindMember(memberName)
+                    if info and info.online then
+                        local gid, gData, mName = groupId, g, memberName
+                        C_Timer.After(delay, function()
+                            Groups:_SyncToMember(gid, gData, mName)
+                        end)
+                        delay = delay + 0.2
+                    end
+                end
+            end
+        end
+    end)
 end
 
 -- ── Basic group CRUD ──────────────────────────────────────────────────────
@@ -551,11 +575,6 @@ function Groups:OnAddonMessage(payload, _)
             if requester ~= myName then
                 -- Stagger replies to avoid everyone flooding at once
                 C_Timer.After(math.random(1, 5), function()
-                    local requesterInfo    = GH.GuildData:FindMember(requester)
-                    local requesterRank    = requesterInfo and requesterInfo.rankIndex
-                    local officerThreshold = GH.DB:GetSetting("officerRankThreshold") or 4
-                    local requesterIsOfficer = requesterRank and requesterRank <= officerThreshold
-
                     for groupId, g in pairs(GH.DB:GetGroups()) do
                         local isOnTeam = false
                         for _, n in ipairs(g.members or {}) do
@@ -564,59 +583,63 @@ function Groups:OnAddonMessage(payload, _)
 
                         if isOnTeam then
                             Groups:_SyncToMember(groupId, g, requester)
-                        elseif requesterIsOfficer then
-                            -- Officer who isn't on this team still gets visibility.
-                            Groups:_OfficerSync(groupId, g)
                         end
+                        -- Always broadcast team data so all guild members can display
+                        -- team assignments in the member list, even for teams they
+                        -- aren't personally on.
+                        Groups:_OfficerSync(groupId, g)
                     end
                 end)
             end
         end
 
-    -- ── TMOFC: officer visibility sync (no membership) ───────────────────
+    -- ── TMOFC: team roster broadcast — processed by all guild members ───────
+    -- All clients store this so the Members tab can show team assignments for
+    -- every guild member, not only officers and personal team members.
     elseif msgType == TM_OFC then
-        if GH:IsOfficer() then
-            if #parts >= 5 then
-                local groupId           = parts[2]
-                local teamName          = parts[3]
-                local membersStr        = parts[4]
-                local channelId         = parts[5] ~= "" and parts[5] or nil
-                local creatorRank       = tonumber(parts[6])
-                local creator           = (parts[7] and parts[7] ~= "") and parts[7] or nil
-                local incomingCreatedAt = tonumber(parts[8]) or 0
-                local incomingPending   = parts[9] == "1"
+        if #parts >= 5 then
+            local groupId           = parts[2]
+            local teamName          = parts[3]
+            local membersStr        = parts[4]
+            local channelId         = parts[5] ~= "" and parts[5] or nil
+            local creatorRank       = tonumber(parts[6])
+            local creator           = (parts[7] and parts[7] ~= "") and parts[7] or nil
+            local incomingCreatedAt = tonumber(parts[8]) or 0
+            local incomingPending   = parts[9] == "1"
 
-                local members = {}
-                if membersStr ~= "" then
-                    for n in (membersStr .. ","):gmatch("([^,]*),") do
-                        if n ~= "" then members[#members + 1] = n end
-                    end
+            local members = {}
+            if membersStr ~= "" then
+                for n in (membersStr .. ","):gmatch("([^,]*),") do
+                    if n ~= "" then members[#members + 1] = n end
                 end
-
-                local existing = GH.DB:GetGroups()[groupId]
-                GH.DB:SaveGroup(groupId, {
-                    name        = teamName,
-                    members     = #members > 0 and members or (existing and existing.members or {}),
-                    channelId   = channelId or (existing and existing.channelId),
-                    color       = existing and existing.color or "7289DA",
-                    creator     = creator or (existing and existing.creator),
-                    creatorRank = creatorRank or (existing and existing.creatorRank),
-                    createdAt   = incomingCreatedAt ~= 0 and incomingCreatedAt
-                                  or (existing and existing.createdAt) or 0,
-                    pending     = incomingPending or (existing and existing.pending) or false,
-                })
-
-                if channelId and not GH.DB:GetChat(channelId) then
-                    GH.DB:SaveChat(channelId, {
-                        name     = teamName,
-                        members  = members,
-                        messages = {},
-                    })
-                end
-
-                Groups:_CheckForDuplicate(groupId, teamName)
-                if GH.UI then GH.UI:RefreshTeamsGroupList() end
             end
+
+            local existing = GH.DB:GetGroups()[groupId]
+            GH.DB:SaveGroup(groupId, {
+                name        = teamName,
+                members     = #members > 0 and members or (existing and existing.members or {}),
+                channelId   = channelId or (existing and existing.channelId),
+                color       = existing and existing.color or "7289DA",
+                creator     = creator or (existing and existing.creator),
+                creatorRank = creatorRank or (existing and existing.creatorRank),
+                createdAt   = incomingCreatedAt ~= 0 and incomingCreatedAt
+                              or (existing and existing.createdAt) or 0,
+                pending     = incomingPending or (existing and existing.pending) or false,
+            })
+
+            if channelId and not GH.DB:GetChat(channelId) then
+                GH.DB:SaveChat(channelId, {
+                    name     = teamName,
+                    members  = members,
+                    messages = {},
+                })
+            end
+
+            -- Duplicate conflict detection only makes sense for officers who manage teams.
+            if GH:IsOfficer() then
+                Groups:_CheckForDuplicate(groupId, teamName)
+            end
+            if GH.UI then GH.UI:RefreshTeamsGroupList() end
         end
 
     -- ── TMDLT: broadcast team deletion ───────────────────────────────────

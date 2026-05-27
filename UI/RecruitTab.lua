@@ -451,6 +451,16 @@ local function ShowApplicantsPanel(post)
         closeBtn:SetPoint("BOTTOMRIGHT", _appPanel, "BOTTOMRIGHT", -8, 8)
         closeBtn:SetScript("OnClick", function() _appPanel:Hide() end)
         _appPanel._closeBtn = closeBtn
+        -- Create fixed FontStrings once so they don't accumulate on re-open
+        local title = S:FS(_appPanel, "OVERLAY", "normal")
+        title:SetPoint("TOP", _appPanel, "TOP", 0, -10)
+        title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+        _appPanel._title = title
+        local empty = S:FS(_appPanel, "OVERLAY", "normal")
+        empty:SetPoint("CENTER", _appPanel, "CENTER", 0, 6)
+        empty:SetText("No signups yet.")
+        empty:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+        _appPanel._emptyText = empty
     end
 
     -- Clear dynamic children (keep close button)
@@ -459,21 +469,15 @@ local function ShowApplicantsPanel(post)
         if child ~= _appPanel._closeBtn then child:Hide() end
     end
 
-    local title = S:FS(_appPanel, "OVERLAY", "normal")
-    title:SetPoint("TOP", _appPanel, "TOP", 0, -10)
     local titleStr = (post.instanceName or post.activityType) .. " — Signups"
-    title:SetText(titleStr)
-    title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+    _appPanel._title:SetText(titleStr)
+    _appPanel._title:Show()
 
     local signups = post.signups or {}
     local ROW_H   = 28
 
     if #signups == 0 then
-        local empty = S:FS(_appPanel, "OVERLAY", "normal")
-        empty:SetPoint("CENTER", _appPanel, "CENTER", 0, 6)
-        empty:SetText("No signups yet.")
-        empty:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
-        empty:Show()
+        _appPanel._emptyText:Show()
     else
         for i, signup in ipairs(signups) do
             local row = CreateFrame("Frame", nil, _appPanel)

@@ -1464,8 +1464,9 @@ function UI:BuildSettingsPage(parent)
     MakeTextSetting(oRow3, "rejoinTagText", "Rejoined:", 24, 130)
     MakeHint(oRow3, "Used instead of the join tag when a former member returns")
 
-    local oRow4 = MakeRow("  Note Destination", rowY)
+    local oRow4 = MakeRow("  Join Tag Destination", rowY)
     rowY = rowY - ROW_H
+    MakeHint(oRow4, "Which note field the join date tag is written to when a new member is detected")
     do
         local TARGETS = {
             { k = "custom",  l = "Custom Note"  },
