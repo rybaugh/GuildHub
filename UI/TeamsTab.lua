@@ -289,6 +289,8 @@ function UI:CreateTeamsTab(parent)
     ph:SetPoint("CENTER", msgPanel, "CENTER")
     ph:SetText("Select a team or create a new one")
     ph:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    ph:SetWordWrap(true)
+    ph:SetJustifyH("CENTER")
     frame.placeholder = ph
 
     -- ── Input bar ─────────────────────────────────────────────────────────
