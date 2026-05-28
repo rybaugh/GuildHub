@@ -793,9 +793,19 @@ function UI:_CreateCommunityFinderPanel(parent)
     searchRow:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -54)
     searchRow:SetHeight(30)
 
+    -- Right-to-left anchor chain: createBtn → searchBtn → searchBox
+    local createBtn = S:Button(searchRow, "Create Community", 130, 26)
+    createBtn:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
+    createBtn:SetScript("OnClick", function()
+        UI:_ShowCreateCommunityDialog()
+    end)
+
+    local searchBtn = S:Button(searchRow, "Search", 72, 26)
+    searchBtn:SetPoint("RIGHT", createBtn, "LEFT", -8, 0)
+
     local searchBox = S:EditBox(searchRow, 0, 26, 128)
     searchBox:SetPoint("LEFT",  searchRow, "LEFT",  0, 0)
-    searchBox:SetPoint("RIGHT", searchRow, "RIGHT", -180, 0)
+    searchBox:SetPoint("RIGHT", searchBtn, "LEFT", -6, 0)
     local sHint = S:FS(searchBox, "OVERLAY")
     sHint:SetPoint("LEFT", searchBox, "LEFT", 6, 0)
     sHint:SetText("Search communities…")
@@ -806,34 +816,36 @@ function UI:_CreateCommunityFinderPanel(parent)
     end)
     panel.searchBox = searchBox
 
-    local searchBtn = S:Button(searchRow, "Search", 72, 26)
-    searchBtn:SetPoint("LEFT", searchBox, "RIGHT", 6, 0)
-
-    local createBtn = S:Button(searchRow, "Create Community", 130, 26)
-    createBtn:SetPoint("RIGHT", searchRow, "RIGHT", 0, 0)
-    createBtn:SetScript("OnClick", function()
-        UI:_ShowCreateCommunityDialog()
-    end)
-
-    local statusFS = S:FS(searchRow, "OVERLAY")
-    statusFS:SetPoint("LEFT", searchBtn, "RIGHT", 10, 0)
-    statusFS:SetPoint("RIGHT", createBtn, "LEFT", -6, 0)
+    -- Status label sits below the search row so it never competes with button layout
+    local statusFS = S:FS(panel, "OVERLAY")
+    statusFS:SetPoint("TOPLEFT",  searchRow, "BOTTOMLEFT",  4, -2)
+    statusFS:SetPoint("TOPRIGHT", searchRow, "BOTTOMRIGHT", -4, -2)
     statusFS:SetJustifyH("LEFT")
     statusFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     panel.statusFS = statusFS
 
+    local _searchTimer = nil
     local function DoSearch()
         local term = searchBox:GetText():match("^%s*(.-)%s*$")
         statusFS:SetText("Searching…")
         GH.Communities:SearchFinder(term)
+        -- Fallback poll: in case the search-complete event doesn't fire, refresh after 2 s
+        if _searchTimer then _searchTimer:Cancel() end
+        _searchTimer = C_Timer.NewTimer(2, function()
+            _searchTimer = nil
+            if panel and panel:IsShown() then
+                GH.Communities:CacheFinderResults()
+                UI:_PopulateFinderResults()
+            end
+        end)
     end
     searchBtn:SetScript("OnClick", DoSearch)
     searchBox:SetScript("OnEnterPressed", function(eb) DoSearch(); eb:ClearFocus() end)
     searchBox:SetScript("OnEscapePressed", function(eb) eb:ClearFocus() end)
 
-    -- Results scroll frame
+    -- Results scroll frame (starts below statusFS row)
     local sf = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -94)
+    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -108)
     sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
 
     local sc = CreateFrame("Frame", nil, sf)

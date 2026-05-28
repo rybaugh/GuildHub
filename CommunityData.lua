@@ -133,6 +133,7 @@ function CD:Initialize()
     TryRegister(frame, "CLUB_MESSAGE_ADDED")
     TryRegister(frame, "CLUB_MESSAGE_HISTORY_RECEIVED")
     TryRegister(frame, "CLUB_FINDER_RECRUIT_LIST_LOADED")
+    TryRegister(frame, "CLUB_FINDER_CLUBS_LOADED")   -- retail alias; TryRegister skips if unknown
     frame:SetScript("OnEvent", function(_, event, ...)
         CD:OnEvent(event, ...)
     end)
@@ -157,7 +158,7 @@ function CD:OnEvent(event, ...)
         if GH.UI and GH.UI.OnCommunityHistoryReceived then
             GH.UI:OnCommunityHistoryReceived(...)
         end
-    elseif event == "CLUB_FINDER_RECRUIT_LIST_LOADED" then
+    elseif event == "CLUB_FINDER_RECRUIT_LIST_LOADED" or event == "CLUB_FINDER_CLUBS_LOADED" then
         CD:CacheFinderResults()
         if GH.UI and GH.UI.OnClubFinderLoaded then
             GH.UI:OnClubFinderLoaded()
