@@ -252,7 +252,7 @@ function TeamApps:_HandleResponse(parts)
         if status == "accepted" then
             print("|cff7289daGuildHub:|r Your application to |cffffd700"
                   .. teamName .. "|r was accepted!")
-        else
+        elseif status == "declined" then
             print("|cff7289daGuildHub:|r Your application to |cffffd700"
                   .. teamName .. "|r was declined.")
         end
