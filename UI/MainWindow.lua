@@ -1101,22 +1101,7 @@ function UI:BuildSettingsPage(parent)
         hint:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     end
 
-    -- 4 — Team Rank Threshold (GM only)
-    local row4 = MakeRow("Team Rank Threshold", rowY)
-    rowY = rowY - ROW_H
-    local detectedThreshold = GH.DB:GetSetting("teamRankThreshold") or GH.DB:GetSetting("officerRankThreshold") or 1
-    MakeSpinner(row4, "teamRankThreshold", detectedThreshold, 0, 9,
-        "Rank index ≤ this can create/manage teams",
-        not GH:IsGuildMaster())
-
-    -- 5 — Officer Rank Threshold (GM only)
-    local row5 = MakeRow("Officer Rank Threshold", rowY)
-    rowY = rowY - ROW_H
-    MakeSpinner(row5, "officerRankThreshold", detectedThreshold, 0, 9,
-        "Rank index ≤ this grants all officer features",
-        not GH:IsGuildMaster())
-
-    -- 6 — Debug Mode
+    -- 4 — Debug Mode
     local row6 = MakeRow("Debug Mode", rowY)
     rowY = rowY - ROW_H
     do

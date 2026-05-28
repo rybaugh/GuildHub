@@ -41,13 +41,13 @@ ActivityLog.TYPE_ICON = {
     KICK         = "Interface/Icons/Ability_Warrior_Challange",
     PROMOTE      = "Interface/Icons/Achievement_GuildPerk_MassResurrection",
     DEMOTE       = "Interface/Icons/Ability_Druid_CatFormClaw",
-    LEVEL_UP     = "Interface/Icons/XP_Icon",
+    LEVEL_UP     = "Interface/Icons/Achievement_General",
     NOTE_CHANGE  = "Interface/Icons/INV_Misc_Note_01",
-    OFFICER_NOTE = "Interface/Icons/INV_Misc_Note_06",
+    OFFICER_NOTE = "Interface/Icons/INV_Misc_Note_02",
     BAN_REJOIN   = "Interface/Icons/Ability_Warrior_Challange",
-    BAN          = "Interface/Icons/Spell_Shadow_NetherTear",
-    UNBAN        = "Interface/Icons/Spell_Holy_BlessingOfSalvagation",
-    NAME_CHANGE  = "Interface/Icons/Inv_Misc_QuestionMark",
+    BAN          = "Interface/Icons/Spell_Shadow_ShadowWordPain",
+    UNBAN        = "Interface/Icons/Spell_Holy_BlessingOfSalvation",
+    NAME_CHANGE  = "Interface/Icons/INV_Misc_QuestionMark",
 }
 
 -- ── Initialisation ────────────────────────────────────────────────────────────

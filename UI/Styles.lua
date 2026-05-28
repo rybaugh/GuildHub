@@ -307,11 +307,11 @@ function S:Dropdown(parent, options, w, h)
     label:SetTextColor(1, 1, 1, 1)
     btn.label = label
 
-    local chevron = btn:CreateFontString(nil, "OVERLAY")
-    chevron:SetFontObject(S.FontSmall)
-    chevron:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
-    chevron:SetText("\226\150\190")  -- ▾ (UTF-8 bytes: E2 96 BE)
-    chevron:SetTextColor(1, 1, 1, 0.65)
+    local chevron = btn:CreateTexture(nil, "OVERLAY")
+    chevron:SetSize(12, 12)
+    chevron:SetPoint("RIGHT", btn, "RIGHT", -8, 0)
+    chevron:SetTexture("Interface/Buttons/UI-ScrollBar-ScrollDownButton-Up")
+    chevron:SetVertexColor(1, 1, 1, 0.65)
 
     btn:SetScript("OnEnter", function(self)
         self.bg:SetColorTexture(0.52, 0.66, 1.00, 0.95)
@@ -326,9 +326,9 @@ function S:Dropdown(parent, options, w, h)
         intercept:Hide()
     end)
 
-    -- Popup (UIParent-parented so it floats above the dialog)
+    -- Popup (TOOLTIP strata floats above DIALOG frames regardless of SetToplevel level)
     local popup = CreateFrame("Frame", nil, UIParent)
-    popup:SetFrameStrata("DIALOG")
+    popup:SetFrameStrata("TOOLTIP")
     popup:SetFrameLevel(10)
     popup:SetClampedToScreen(true)
     popup:Hide()
@@ -345,10 +345,10 @@ function S:Dropdown(parent, options, w, h)
     popupBg:SetColorTexture(
         S.COLOR.INPUT_BG[1], S.COLOR.INPUT_BG[2], S.COLOR.INPUT_BG[3], 1)
 
-    -- Intercept: full-screen invisible frame at DIALOG-9, closes popup on outside click
+    -- Intercept: full-screen invisible frame at TOOLTIP-9, closes popup on outside click
     local intercept = CreateFrame("Frame", nil, UIParent)
     intercept:SetAllPoints(UIParent)
-    intercept:SetFrameStrata("DIALOG")
+    intercept:SetFrameStrata("TOOLTIP")
     intercept:SetFrameLevel(9)
     intercept:EnableMouse(true)
     intercept:Hide()

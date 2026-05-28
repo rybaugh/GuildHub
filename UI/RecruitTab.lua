@@ -825,7 +825,7 @@ function UI:CreateLFMTab(parent)
     end
     RefreshFilterBtns()
 
-    local reBroadcastBtn = S:Button(lp, "|TInterface/Buttons/UI-RefreshButton:13:13:0:0|t Refresh", 96, 18)
+    local reBroadcastBtn = S:Button(lp, "|TInterface/Icons/Spell_Frost_WindWalker:13:13|t Refresh", 96, 18)
     reBroadcastBtn:SetPoint("TOPRIGHT", lp, "TOPRIGHT", -8, -4)
     reBroadcastBtn:SetScript("OnClick", function()
         GH.Recruit:BroadcastAll()

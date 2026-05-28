@@ -247,11 +247,14 @@ function Groups:InviteAll(id)
     local g = GH.DB:GetGroups()[id]
     if not g then return end
     local myName = GH:GetPlayerName()
+    local doInvite = InviteUnit
+                  or (C_PartyInfo and C_PartyInfo.InviteUnit)
+    if not doInvite then return end
     for _, memberName in ipairs(g.members) do
         if memberName ~= myName then
-            local info = GH.GuildData.byName[memberName]
+            local info = GH.GuildData:FindMember(memberName)
             if info and info.online then
-                InviteUnit(info.fullName)
+                doInvite(info.fullName)
             end
         end
     end

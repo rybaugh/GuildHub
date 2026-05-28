@@ -15,6 +15,8 @@ local _activeStreamId = nil
 local _tabBtns        = {}   -- array of {btn, clubId}
 local _tabScrollX     = 0
 
+local _focusFilter    = {}       -- [focusIndex]=true when that focus is an active filter
+local _roleFilter     = "Any"    -- "Any"|"Tank"|"Healer"|"DPS"
 local ROLE_LABELS = {}
 if Enum and Enum.ClubRoleIdentifier then
     ROLE_LABELS[Enum.ClubRoleIdentifier.Owner]     = "Owner"
@@ -437,7 +439,7 @@ function UI:_RefreshCommunityRoster()
     local rowI  = 0
 
     for _, member in ipairs(members) do
-        if member.name and not member.isBanned then
+        if not member.isBanned then
             rowI = rowI + 1
             local row = AcquireRosterRow(sc)
             row:ClearAllPoints()
@@ -463,9 +465,9 @@ function UI:_RefreshCommunityRoster()
                     S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 1)
             end
 
-            -- Name with class color
+            -- Name with class color (name may be nil for offline members not yet cached)
             local r, g, b = ClassColorFromId(member.classID)
-            row.nameFS:SetText(member.name or "")
+            row.nameFS:SetText(member.name or "—")
             row.nameFS:SetTextColor(r, g, b)
 
             -- Level
@@ -697,6 +699,14 @@ local FOCUS_INDEX_INFO = {
     [8]  = { label = "RP",        hex = "FFAA44" },
 }
 
+-- Ordered focus entries used for filter buttons and decoding.
+local FOCUS_ORDER = {
+    { idx=1, label="Questing" }, { idx=2, label="Dungeons" },
+    { idx=3, label="Raids"    }, { idx=4, label="Mythic+"  },
+    { idx=5, label="PvP"      }, { idx=6, label="Social"   },
+    { idx=7, label="Leveling" }, { idx=8, label="RP"       },
+}
+
 -- Decode a recruitmentFlags bitmask into a displayable colored-tag string.
 local function DecodeFocusLabels(flags)
     if not (C_ClubFinder and C_ClubFinder.GetFocusIndexFromFlag) then return "" end
@@ -717,21 +727,58 @@ local function DecodeFocusLabels(flags)
     return table.concat(out, "  ")
 end
 
+-- Returns an array of spec IDs for every spec that fills the requested role.
+-- Used to pass to C_ClubFinder.RequestClubsList for server-side role filtering.
+local function GetRoleSpecIDs(roleName)
+    local wowRole = ({ Tank = "TANK", Healer = "HEALER", DPS = "DAMAGER" })[roleName]
+    if not wowRole or not GetNumClasses then return {} end
+    local specIDs = {}
+    for ci = 1, GetNumClasses() do
+        local _, _, classID = GetClassInfo(ci)
+        if classID then
+            for si = 1, (GetNumSpecializationsForClass(classID) or 0) do
+                local specID, _, _, _, role = GetSpecializationInfoForClassID(classID, si)
+                if specID and role == wowRole then specIDs[#specIDs + 1] = specID end
+            end
+        end
+    end
+    return specIDs
+end
+
+-- Returns true when the club's recruitmentFlags match at least one active focus filter,
+-- or when no focus filter is set (show-all mode).
+local function ClubPassesFocusFilter(club)
+    if not next(_focusFilter) then return true end
+    if not (C_ClubFinder and C_ClubFinder.GetFocusIndexFromFlag) then return true end
+    local flags = club.recruitmentFlags
+    if not flags or flags == 0 then return false end
+    for focusIdx in pairs(_focusFilter) do
+        for b = 0, 29 do
+            local fv = bit.lshift(1, b)
+            if bit.band(flags, fv) ~= 0 then
+                local ok, idx = pcall(C_ClubFinder.GetFocusIndexFromFlag, fv)
+                if ok and idx == focusIdx then return true end
+            end
+        end
+    end
+    return false
+end
+
 local _finderResultRows  = {}
-local _expandedResultIdx = nil
+local _expandedResultGUID = nil
 
 local function AcquireFinderRow(parent)
     local row = table.remove(_finderResultRows)
     if row then row:SetParent(parent); return row end
 
     row = CreateFrame("Frame", nil, parent)
-    row:SetHeight(58)   -- collapsed: name + desc + focus
+    row:SetHeight(44)   -- collapsed: name line + desc/focus line
 
     local bg = row:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     row.bg = bg
 
-    -- Name (line 1 left) — right margin leaves room for member count
+    -- Name (line 1 left)
     local namefs = S:FS(row, "OVERLAY", "normal")
     namefs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -6)
     namefs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -130, -6)
@@ -745,34 +792,35 @@ local function AcquireFinderRow(parent)
     countfs:SetJustifyH("RIGHT")
     row.countfs = countfs
 
-    -- Short description (line 2) — always visible, truncated when collapsed
+    -- Description (line 2 left portion). Right bound shrinks to leave room for focus.
+    -- ClearAllPoints is called in _PopulateFinderResults to widen it when expanded.
     local descfs = S:FS(row, "OVERLAY")
     descfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -26)
-    descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -130, -26)
+    descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -160, -26)
     descfs:SetJustifyH("LEFT")
-    descfs:SetWordWrap(true)
+    descfs:SetWordWrap(false)
     descfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     row.descfs = descfs
 
-    -- Focus tags (line 3 collapsed / repositioned when expanded)
+    -- Focus labels (line 2 right portion, right-aligned beside description).
+    -- In expanded mode, SetText("") hides it; focus is folded into the meta line instead.
     local focusfs = S:FS(row, "OVERLAY")
-    focusfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -44)
-    focusfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -44)
-    focusfs:SetJustifyH("LEFT")
+    focusfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -26)
+    focusfs:SetJustifyH("RIGHT")
     focusfs:SetWordWrap(false)
     row.focusfs = focusfs
 
-    -- Meta line: leader + min ilvl (only shown when expanded, between desc and focus)
+    -- Meta line: leader + ilvl + focus (expanded only, below full-width description)
     local metafs = S:FS(row, "OVERLAY")
-    metafs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -62)
-    metafs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -62)
+    metafs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -80)
+    metafs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -80)
     metafs:SetJustifyH("LEFT")
     metafs:SetWordWrap(false)
     metafs:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
     metafs:Hide()
     row.metafs = metafs
 
-    -- Apply button anchored to bottom-right (stays in place regardless of row height)
+    -- Apply button anchored to bottom-right
     local applyBtn = S:Button(row, "Apply", 80, 26)
     applyBtn:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -10, 8)
     applyBtn:Hide()
@@ -829,7 +877,7 @@ function UI:_CreateCommunityFinderPanel(parent)
         S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
         S.COLOR.PANEL_HDR_B[1], S.COLOR.PANEL_HDR_B[2], S.COLOR.PANEL_HDR_B[3], 1)
 
-    local backBtn = S:Button(hdr, "← Back", 70, 26)
+    local backBtn = S:Button(hdr, "< Back", 70, 26)
     backBtn:SetPoint("LEFT", hdr, "LEFT", 10, 0)
     backBtn:SetScript("OnClick", function() UI:_HideCommunityFinder() end)
 
@@ -873,22 +921,12 @@ function UI:_CreateCommunityFinderPanel(parent)
     end)
     panel.searchBox = searchBox
 
-    -- Status label sits below the search row so it never competes with button layout
-    local statusFS = S:FS(panel, "OVERLAY")
-    statusFS:SetPoint("TOPLEFT",  searchRow, "BOTTOMLEFT",  4, -2)
-    statusFS:SetPoint("TOPRIGHT", searchRow, "BOTTOMRIGHT", -4, -2)
-    statusFS:SetJustifyH("LEFT")
-    statusFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
-    panel.statusFS = statusFS
-
     local _searchTimer  = nil
     local _searchTimer2 = nil
     local function DoSearch()
         local term = searchBox:GetText():match("^%s*(.-)%s*$")
-        statusFS:SetText("Searching…")
-        GH.Communities:SearchFinder(term)
-        -- Fallback polls in case the search-complete event is missed.
-        -- First attempt at 3 s, second attempt at 6 s for slow connections.
+        if panel.statusFS then panel.statusFS:SetText("Searching…") end
+        GH.Communities:SearchFinder(term, GetRoleSpecIDs(_roleFilter))
         if _searchTimer  then _searchTimer:Cancel()  end
         if _searchTimer2 then _searchTimer2:Cancel() end
         _searchTimer = C_Timer.NewTimer(3, function()
@@ -910,9 +948,138 @@ function UI:_CreateCommunityFinderPanel(parent)
     searchBox:SetScript("OnEnterPressed", function(eb) DoSearch(); eb:ClearFocus() end)
     searchBox:SetScript("OnEscapePressed", function(eb) eb:ClearFocus() end)
 
-    -- Results scroll frame (starts below statusFS row)
+    -- ── Filter bar (below search row) ────────────────────────────────────────
+    -- Row 1: focus activity toggles (multi-select, client-side filter).
+    -- Row 2: role buttons (single-select, triggers new server search) + status label.
+    local filterBar = CreateFrame("Frame", nil, panel)
+    filterBar:SetPoint("TOPLEFT",  panel, "TOPLEFT",  10, -88)   -- searchRow bottom -84, gap -4
+    filterBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -10, -88)
+    filterBar:SetHeight(58)   -- 26px focus row + 6px gap + 26px role row
+
+    -- Focus row
+    local focusRow = CreateFrame("Frame", nil, filterBar)
+    focusRow:SetPoint("TOPLEFT",  filterBar, "TOPLEFT",  0, 0)
+    focusRow:SetPoint("TOPRIGHT", filterBar, "TOPRIGHT", 0, 0)
+    focusRow:SetHeight(26)
+
+    local focusLabelFS = S:FS(focusRow, "OVERLAY")
+    focusLabelFS:SetPoint("LEFT", focusRow, "LEFT", 2, 0)
+    focusLabelFS:SetText("Focus:")
+    focusLabelFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+    local function RefreshFocusBtns()
+        for _, entry in ipairs(panel._focusBtnList) do
+            if entry.btn.bg then
+                local active = _focusFilter[entry.idx]
+                entry.btn.bg:SetColorTexture(
+                    active and S.COLOR.ACCENT[1] or S.COLOR.PANEL[1],
+                    active and S.COLOR.ACCENT[2] or S.COLOR.PANEL[2],
+                    active and S.COLOR.ACCENT[3] or S.COLOR.PANEL[3], 0.9)
+            end
+        end
+    end
+
+    panel._focusBtnList = {}
+    local fxOff = 48
+    for _, fo in ipairs(FOCUS_ORDER) do
+        local w = math.max(36, #fo.label * 7 + 10)
+        local fbtn = S:Button(focusRow, fo.label, w, 22)
+        fbtn:SetPoint("TOPLEFT", focusRow, "TOPLEFT", fxOff, 2)
+        fxOff = fxOff + w + 4
+        local capturedFocusIdx = fo.idx
+        fbtn:SetScript("OnClick", function()
+            if _focusFilter[capturedFocusIdx] then
+                _focusFilter[capturedFocusIdx] = nil
+            else
+                _focusFilter[capturedFocusIdx] = true
+            end
+            RefreshFocusBtns()
+            UI:_PopulateFinderResults()
+        end)
+        fbtn:SetScript("OnEnter", function(self)
+            local active = _focusFilter[capturedFocusIdx]
+            self.bg:SetColorTexture(
+                active and 0.52 or 0.30,
+                active and 0.66 or 0.33,
+                active and 1.00 or 0.45, 0.9)
+        end)
+        fbtn:SetScript("OnLeave", function(self)
+            local active = _focusFilter[capturedFocusIdx]
+            self.bg:SetColorTexture(
+                active and S.COLOR.ACCENT[1] or S.COLOR.PANEL[1],
+                active and S.COLOR.ACCENT[2] or S.COLOR.PANEL[2],
+                active and S.COLOR.ACCENT[3] or S.COLOR.PANEL[3], 0.9)
+        end)
+        panel._focusBtnList[#panel._focusBtnList + 1] = { btn = fbtn, idx = fo.idx }
+    end
+
+    -- Role row
+    local roleRow = CreateFrame("Frame", nil, filterBar)
+    roleRow:SetPoint("TOPLEFT",  filterBar, "TOPLEFT",  0, -32)
+    roleRow:SetPoint("TOPRIGHT", filterBar, "TOPRIGHT", 0, -32)
+    roleRow:SetHeight(26)
+
+    local roleLabelFS = S:FS(roleRow, "OVERLAY")
+    roleLabelFS:SetPoint("LEFT", roleRow, "LEFT", 2, 0)
+    roleLabelFS:SetText("Role:")
+    roleLabelFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+
+    local function RefreshRoleBtns()
+        for _, entry in ipairs(panel._roleBtnList) do
+            if entry.btn.bg then
+                local active = entry.role == _roleFilter
+                entry.btn.bg:SetColorTexture(
+                    active and S.COLOR.ACCENT[1] or S.COLOR.PANEL[1],
+                    active and S.COLOR.ACCENT[2] or S.COLOR.PANEL[2],
+                    active and S.COLOR.ACCENT[3] or S.COLOR.PANEL[3], 0.9)
+            end
+        end
+    end
+
+    panel._roleBtnList = {}
+    local rxOff = 48
+    for _, role in ipairs({ "Any", "Tank", "Healer", "DPS" }) do
+        local w = math.max(40, #role * 7 + 14)
+        local rbtn = S:Button(roleRow, role, w, 22)
+        rbtn:SetPoint("TOPLEFT", roleRow, "TOPLEFT", rxOff, 2)
+        rxOff = rxOff + w + 4
+        local capturedRole = role
+        rbtn:SetScript("OnClick", function()
+            if _roleFilter ~= capturedRole then
+                _roleFilter = capturedRole
+                RefreshRoleBtns()
+                DoSearch()
+            end
+        end)
+        rbtn:SetScript("OnEnter", function(btn)
+            local active = _roleFilter == capturedRole
+            btn.bg:SetColorTexture(
+                active and 0.52 or 0.30,
+                active and 0.66 or 0.33,
+                active and 1.00 or 0.45, 0.9)
+        end)
+        rbtn:SetScript("OnLeave", function(btn)
+            local active = _roleFilter == capturedRole
+            btn.bg:SetColorTexture(
+                active and S.COLOR.ACCENT[1] or S.COLOR.PANEL[1],
+                active and S.COLOR.ACCENT[2] or S.COLOR.PANEL[2],
+                active and S.COLOR.ACCENT[3] or S.COLOR.PANEL[3], 0.9)
+        end)
+        panel._roleBtnList[#panel._roleBtnList + 1] = { btn = rbtn, role = capturedRole }
+    end
+    RefreshRoleBtns()
+
+    -- Status label: right portion of role row
+    local statusFS = S:FS(roleRow, "OVERLAY")
+    statusFS:SetPoint("LEFT",  roleRow, "LEFT",  rxOff + 6, 0)
+    statusFS:SetPoint("RIGHT", roleRow, "RIGHT", 0, 0)
+    statusFS:SetJustifyH("LEFT")
+    statusFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    panel.statusFS = statusFS
+
+    -- Results scroll frame (starts below filter bar)
     local sf = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -108)
+    sf:SetPoint("TOPLEFT",     panel, "TOPLEFT",     0, -152)   -- 88+58+6
     sf:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -20, 0)
 
     local sc = CreateFrame("Frame", nil, sf)
@@ -934,7 +1101,7 @@ function UI:ShowCommunityFinder()
     if frame.emptyFS      then frame.emptyFS:Hide()      end
     if frame.emptyFindBtn then frame.emptyFindBtn:Hide() end
     if frame.finderPanel  then frame.finderPanel:Show()  end
-    _expandedResultIdx = nil
+    _expandedResultGUID = nil
     UI:_PopulateFinderResults()
 end
 
@@ -961,25 +1128,45 @@ function UI:_PopulateFinderResults()
     _activeFinderRows = {}
 
     local results = GH.Communities._finderResults or {}
-    panel.statusFS:SetText(#results > 0 and (#results .. " results") or "No communities found.")
+
+    -- Apply client-side focus filter
+    local filtered = {}
+    for _, club in ipairs(results) do
+        if ClubPassesFocusFilter(club) then filtered[#filtered + 1] = club end
+    end
+
+    local statusText
+    if #results == 0 then
+        statusText = "No communities found."
+    elseif #filtered == 0 then
+        statusText = "No results match the selected focus."
+    elseif next(_focusFilter) then
+        statusText = #filtered .. " of " .. #results .. " communities"
+    else
+        statusText = #results .. " communities"
+    end
+    panel.statusFS:SetText(statusText)
 
     local sc   = panel.resultsScrollContent
     local rowY = 0
+    local rowN = 0
 
-    for idx, club in ipairs(results) do
+    for _, club in ipairs(filtered) do
+        rowN = rowN + 1
         local row = AcquireFinderRow(sc)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT",  sc, "TOPLEFT",  0, -rowY)
         row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -rowY)
 
-        local isExpanded = (idx == _expandedResultIdx)
-        -- Collapsed: 58px (name + 1-line desc + focus tags).
-        -- Expanded: 145px (name + full desc + meta + focus + apply row).
-        local rowH = isExpanded and 145 or 58
+        local capturedGUID = club.clubFinderGUID
+        local isExpanded = capturedGUID ~= nil and capturedGUID == _expandedResultGUID
+        -- Collapsed: 44px (name + desc/focus on same line).
+        -- Expanded: 140px (name + full-width desc + meta + apply row).
+        local rowH = isExpanded and 140 or 44
         row:SetHeight(rowH)
 
         -- Alternating stripe
-        if idx % 2 == 0 then
+        if rowN % 2 == 0 then
             row.bg:SetColorTexture(
                 S.COLOR.PANEL_ALT[1], S.COLOR.PANEL_ALT[2], S.COLOR.PANEL_ALT[3], 0.55)
         else
@@ -996,12 +1183,31 @@ function UI:_PopulateFinderResults()
         row.countfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
         local fullDesc = club.comment or club.description or ""
-        -- Collapsed: 1 line (~90 chars). Expanded: up to 3 lines (~180 chars).
-        local desc = fullDesc:sub(1, isExpanded and 180 or 90)
-        if #fullDesc > (isExpanded and 180 or 90) then desc = desc .. "…" end
-        row.descfs:SetText(desc)
+        if isExpanded then
+            -- Full-width word-wrapped description; focus folds into meta line
+            local desc = fullDesc:sub(1, 180)
+            if #fullDesc > 180 then desc = desc .. "…" end
+            row.descfs:ClearAllPoints()
+            row.descfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -26)
+            row.descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -26)
+            row.descfs:SetWordWrap(true)
+            row.descfs:SetText(desc)
+            if row.focusfs then row.focusfs:SetText("") end
+        else
+            -- 1-line description; focus tags sit right-aligned on the same line
+            local desc = fullDesc:sub(1, 90)
+            if #fullDesc > 90 then desc = desc .. "…" end
+            row.descfs:ClearAllPoints()
+            row.descfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -26)
+            row.descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -160, -26)
+            row.descfs:SetWordWrap(false)
+            row.descfs:SetText(desc)
+            if row.focusfs then
+                row.focusfs:SetText(DecodeFocusLabels(club.recruitmentFlags))
+            end
+        end
 
-        -- Meta line (leader + ilvl) — expanded only
+        -- Meta line (leader + ilvl + focus) — expanded only
         if isExpanded and row.metafs then
             local parts = {}
             if club.guildLeader and club.guildLeader ~= "" then
@@ -1010,31 +1216,21 @@ function UI:_PopulateFinderResults()
             if club.minILvl and club.minILvl > 0 then
                 parts[#parts+1] = "Min iLvl: " .. club.minILvl
             end
+            local focusTags = DecodeFocusLabels(club.recruitmentFlags)
+            if focusTags ~= "" then parts[#parts+1] = focusTags end
             row.metafs:SetText(table.concat(parts, "   ·   "))
             row.metafs:Show()
         elseif row.metafs then
             row.metafs:Hide()
         end
 
-        -- Focus tags — always shown; repositioned below meta when expanded
-        if row.focusfs then
-            local focusTags = DecodeFocusLabels(club.recruitmentFlags)
-            row.focusfs:SetText(focusTags)
-            row.focusfs:ClearAllPoints()
-            local focusY = isExpanded and -82 or -44
-            row.focusfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10,  focusY)
-            row.focusfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, focusY)
-        end
-
         row.applyBtn:SetShown(isExpanded)
         row.commentBox:SetShown(isExpanded)
         row.commentHint:SetShown(isExpanded and row.commentBox:GetText() == "")
 
-        -- Click row to expand/collapse
-        local capturedIdx  = idx
-        local capturedGUID = club.clubFinderGUID
+        -- Click row to expand/collapse (tracked by GUID so focus-filter doesn't break indices)
         row:SetScript("OnMouseUp", function()
-            _expandedResultIdx = (capturedIdx == _expandedResultIdx) and nil or capturedIdx
+            _expandedResultGUID = (capturedGUID == _expandedResultGUID) and nil or capturedGUID
             UI:_PopulateFinderResults()
         end)
 

@@ -110,9 +110,9 @@ function UI:CreateEventsTab(parent, w)
     rsvpLabel:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     frame.rsvpLabel = rsvpLabel
 
-    local yesBtn   = S:Button(detailPanel, "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:0|t Yes",   80, 26)
-    local maybeBtn = S:Button(detailPanel, "|TInterface\\RAIDFRAME\\ReadyCheck-Waiting:0|t Maybe",  80, 26)
-    local noBtn    = S:DangerButton(detailPanel, "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:0|t No", 80, 26)
+    local yesBtn   = S:Button(detailPanel, "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:12:12|t Yes",   80, 26)
+    local maybeBtn = S:Button(detailPanel, "|TInterface\\RAIDFRAME\\ReadyCheck-Waiting:12:12|t Maybe",  80, 26)
+    local noBtn    = S:DangerButton(detailPanel, "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:12:12|t No", 80, 26)
 
     yesBtn:SetPoint("LEFT",   rsvpLabel, "RIGHT",   10, 0)
     maybeBtn:SetPoint("LEFT", yesBtn,    "RIGHT",    6, 0)
@@ -250,9 +250,9 @@ function UI:RefreshEventsTab()
             rsvpLabel:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -6, 4)
             local rsvpColors = { yes = {0.2,0.9,0.3}, maybe = {0.9,0.7,0.1}, no = {0.9,0.3,0.3} }
             local rc = rsvpColors[myRsvp] or {0.5,0.5,0.5}
-            local rsvpText = (myRsvp == "yes" and "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:0|t")
-                or (myRsvp == "no" and "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:0|t")
-                or "|TInterface\\RAIDFRAME\\ReadyCheck-Waiting:0|t"
+            local rsvpText = (myRsvp == "yes" and "|TInterface\\RAIDFRAME\\ReadyCheck-Ready:12:12|t")
+                or (myRsvp == "no" and "|TInterface\\RAIDFRAME\\ReadyCheck-NotReady:12:12|t")
+                or "|TInterface\\RAIDFRAME\\ReadyCheck-Waiting:12:12|t"
             rsvpLabel:SetText(rsvpText)
             rsvpLabel:SetTextColor(rc[1], rc[2], rc[3])
         end

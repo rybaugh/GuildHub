@@ -31,10 +31,18 @@ function CD:GetAll()
 end
 
 -- Returns members of a community, sorted online-first then alphabetically.
+-- GetClubMembers returns member IDs in WoW 12.x; GetMemberInfo resolves each to a table.
 function CD:GetMembers(clubId)
     if not (C_Club and C_Club.GetClubMembers) then return {} end
-    local ok, members = pcall(C_Club.GetClubMembers, clubId)
-    if not ok or not members then return {} end
+    local ok, memberIds = pcall(C_Club.GetClubMembers, clubId)
+    if not ok or not memberIds then return {} end
+    local members = {}
+    for _, memberId in ipairs(memberIds) do
+        if C_Club.GetMemberInfo then
+            local ok2, info = pcall(C_Club.GetMemberInfo, clubId, memberId)
+            if ok2 and info then members[#members + 1] = info end
+        end
+    end
     table.sort(members, function(a, b)
         local aOn = CD:IsOnline(a.presence)
         local bOn = CD:IsOnline(b.presence)
@@ -83,7 +91,8 @@ end
 -- Initiates a community search.
 -- WoW 12.x API: RequestClubsList(guildListRequested, searchString, specIDs)
 --   false = community list, {} = no spec filter
-function CD:SearchFinder(searchTerm)
+-- specIDs: optional array of spec IDs for role filtering (pass {} for any role).
+function CD:SearchFinder(searchTerm, specIDs)
     if not (C_ClubFinder and C_ClubFinder.RequestClubsList) then return end
     -- Lazy-register search-result events (not available at ADDON_LOADED time).
     if CD.eventFrame then
@@ -91,7 +100,7 @@ function CD:SearchFinder(searchTerm)
             pcall(CD.eventFrame.RegisterEvent, CD.eventFrame, ev)
         end
     end
-    local ok, err = pcall(C_ClubFinder.RequestClubsList, false, searchTerm, {})
+    local ok, err = pcall(C_ClubFinder.RequestClubsList, false, searchTerm, specIDs or {})
     if GuildHub._debugMode then
         DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r RequestClubsList ok=" ..
             tostring(ok) .. " err=" .. tostring(err))

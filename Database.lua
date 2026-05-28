@@ -18,8 +18,6 @@ local function sv() return rawget(_G, "GuildHubDB") end
 
 local DEFAULTS = {
     settings = {
-        officerRankThreshold  = 4,
-        teamRankThreshold     = 4,
         replaceGuildFrame     = false,
         minimapAngle          = math.rad(225),
         timeFormat            = "12h",
