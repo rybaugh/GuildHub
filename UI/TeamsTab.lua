@@ -118,6 +118,27 @@ function UI:CreateTeamsTab(parent)
     frame.membersBtn = membersBtn
     frame.inviteBtn  = inviteBtn
 
+    local applyBtn = S:Button(tabStrip, "Apply", 80, 26)
+    applyBtn:SetPoint("RIGHT", inviteBtn, "LEFT", -4, 0)
+    applyBtn:Hide()
+    frame.applyBtn = applyBtn
+
+    local appsBtn = S:Button(tabStrip, "Applications", 110, 26)
+    appsBtn:SetPoint("RIGHT", applyBtn, "LEFT", -4, 0)
+    appsBtn:Hide()
+    frame.appsBtn = appsBtn
+
+    applyBtn:SetScript("OnClick", function()
+        if not selected then return end
+        local app = GH.TeamApps:GetMyApplication(selected)
+        if app and app.status == "pending" then return end
+        GH.UI:ShowTeamApplicationForm(selected)
+    end)
+
+    appsBtn:SetScript("OnClick", function()
+        if selected then GH.UI:ShowTeamApplicationsDialog(selected) end
+    end)
+
     -- Tab container (fills left portion of strip, horizontal scroll)
     local tabScrollFrame = CreateFrame("ScrollFrame", nil, tabStrip)
     tabScrollFrame:SetPoint("TOPLEFT",    tabStrip,  "TOPLEFT",    2, 0)
@@ -129,6 +150,11 @@ function UI:CreateTeamsTab(parent)
         sf:SetHorizontalScroll(math.max(0, math.min(max, sf:GetHorizontalScroll() - delta * 80)))
     end)
     frame.tabScrollFrame = tabScrollFrame
+
+    frame.tabScrollFrame:ClearAllPoints()
+    frame.tabScrollFrame:SetPoint("TOPLEFT",    tabStrip, "TOPLEFT",    2, 0)
+    frame.tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip, "BOTTOMLEFT", 2, 0)
+    frame.tabScrollFrame:SetPoint("RIGHT",      appsBtn,  "LEFT",       -8, 0)
 
     local tabArea = CreateFrame("Frame", nil, tabScrollFrame)
     tabArea:SetHeight(TAB_H)
@@ -314,6 +340,8 @@ function UI:CreateTeamsTab(parent)
         local isOfficer = GH:IsOfficer()
         frame.newTeamBtn:SetShown(isOfficer)
         frame.deleteBtn:SetShown(isOfficer)
+        frame.applyBtn:Hide()
+        frame.appsBtn:Hide()
         UI:RefreshTeamsGroupList()
         if selected then UI:ShowTeamView(selected) end
 
@@ -358,7 +386,7 @@ function UI:RefreshTeamsGroupList()
         frame.inviteBtn:SetAlpha(0.35)
     end
 
-    local groups = GH.Groups:GetAll()
+    local groups = GH.Groups:GetAllForBrowsing()
     local xOff   = 0
 
     for _, g in ipairs(groups) do
@@ -462,6 +490,25 @@ function UI:RefreshTeamsGroupList()
     end
 end
 
+function UI:RefreshTeamsApplicationsBadge()
+    local frame = UI.TeamsTab
+    if not frame or not selected then return end
+    if not frame.appsBtn then return end
+
+    if not GH:CanManageTeam(selected) then
+        frame.appsBtn:Hide()
+        return
+    end
+
+    local count = GH.TeamApps:GetPendingCount(selected)
+    if count > 0 then
+        frame.appsBtn:SetText("Applications (" .. count .. ")")
+        frame.appsBtn:Show()
+    else
+        frame.appsBtn:Hide()
+    end
+end
+
 -- ── Team view ─────────────────────────────────────────────────────────────
 
 function UI:ShowTeamView(groupId)
@@ -470,20 +517,60 @@ function UI:ShowTeamView(groupId)
     local g = GH.Groups:Get(groupId)
     if not g then return end
 
-    EnsureTeamChannel(groupId)
+    -- Determine membership and management status
+    local myName    = GH:GetPlayerName()
+    local isMember  = false
+    for _, n in ipairs(g.members or {}) do
+        if n == myName then isMember = true; break end
+    end
+    local canManage = GH:CanManageTeam(groupId)
+    local isVisible = isMember or canManage
 
     frame.placeholder:Hide()
-    local canManage = GH:CanManageTeam(groupId)
+
     frame.deleteBtn:SetAlpha(canManage and 1 or 0.35)
-    frame.membersBtn:SetAlpha(1)
-    frame.inviteBtn:SetAlpha(1)
 
-    UI:RefreshTeamRoster(groupId)
+    if isVisible then
+        frame.membersBtn:SetAlpha(1)
+        frame.inviteBtn:SetAlpha(1)
+        frame.applyBtn:Hide()
 
-    frame._scrolledUp = false
-    if frame.scrollToBottomBtn then frame.scrollToBottomBtn:Hide() end
-    lastMsgTs = 0
-    UI:RefreshTeamChatMessages(groupId)
+        EnsureTeamChannel(groupId)
+        UI:RefreshTeamRoster(groupId)
+        frame._scrolledUp = false
+        if frame.scrollToBottomBtn then frame.scrollToBottomBtn:Hide() end
+        lastMsgTs = 0
+        UI:RefreshTeamChatMessages(groupId)
+    else
+        frame.membersBtn:SetAlpha(0.35)
+        frame.inviteBtn:SetAlpha(0.35)
+
+        local app = GH.TeamApps:GetMyApplication(groupId)
+        if app and app.status == "pending" then
+            frame.applyBtn:SetText("Application Pending")
+            frame.applyBtn:SetAlpha(0.5)
+            frame.applyBtn:SetScript("OnClick", nil)
+        else
+            frame.applyBtn:SetText("Apply")
+            frame.applyBtn:SetAlpha(1)
+            frame.applyBtn:SetScript("OnClick", function()
+                GH.UI:ShowTeamApplicationForm(groupId)
+            end)
+        end
+        frame.applyBtn:Show()
+
+        frame.rosterPanel:Hide()
+        frame:UpdateLayout(false)
+
+        local memberCount = #(g.members or {})
+        frame.placeholder:SetText(
+            "|cffffd700" .. g.name .. "|r\n" ..
+            memberCount .. " member" .. (memberCount == 1 and "" or "s") .. "\n\n" ..
+            "|cff888888Apply using the button above to request membership.|r")
+        frame.placeholder:Show()
+    end
+
+    UI:RefreshTeamsApplicationsBadge()
 end
 
 function UI:RefreshTeamRoster(groupId)
