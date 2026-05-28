@@ -693,39 +693,54 @@ local function AcquireFinderRow(parent)
     if row then row:SetParent(parent); return row end
 
     row = CreateFrame("Frame", nil, parent)
-    row:SetHeight(44)
+    row:SetHeight(46)
 
     local bg = row:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     row.bg = bg
 
+    -- Name (line 1 left) — right margin leaves room for member count
     local namefs = S:FS(row, "OVERLAY", "normal")
     namefs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -6)
-    namefs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -120, -6)
+    namefs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -130, -6)
     namefs:SetJustifyH("LEFT")
     namefs:SetWordWrap(false)
     row.namefs = namefs
 
+    -- Member count (line 1 right)
     local countfs = S:FS(row, "OVERLAY")
     countfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -6)
     countfs:SetJustifyH("RIGHT")
     row.countfs = countfs
 
+    -- Short description (line 2) — always visible, truncated when collapsed
     local descfs = S:FS(row, "OVERLAY")
-    descfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -24)
-    descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -120, -24)
+    descfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -26)
+    descfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -130, -26)
     descfs:SetJustifyH("LEFT")
     descfs:SetWordWrap(true)
     descfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     row.descfs = descfs
 
-    local applyBtn = S:Button(row, "Apply", 72, 24)
-    applyBtn:SetPoint("RIGHT", row, "RIGHT", -10, 0)
+    -- Meta line: leader + min ilvl (only shown when expanded)
+    local metafs = S:FS(row, "OVERLAY")
+    metafs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -62)
+    metafs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -62)
+    metafs:SetJustifyH("LEFT")
+    metafs:SetWordWrap(false)
+    metafs:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+    metafs:Hide()
+    row.metafs = metafs
+
+    -- Apply button anchored to bottom-right (stays in place regardless of row height)
+    local applyBtn = S:Button(row, "Apply", 80, 26)
+    applyBtn:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -10, 8)
     applyBtn:Hide()
     row.applyBtn = applyBtn
 
-    local commentBox = S:EditBox(row, 160, 22, 255)
-    commentBox:SetPoint("RIGHT", applyBtn, "LEFT", -6, 0)
+    -- Comment input left of apply button
+    local commentBox = S:EditBox(row, 200, 22, 255)
+    commentBox:SetPoint("BOTTOMRIGHT", applyBtn, "BOTTOMLEFT", -6, 0)
     commentBox:Hide()
     row.commentBox = commentBox
 
@@ -747,6 +762,7 @@ local function ReleaseFinderRow(row)
     row.applyBtn:Enable()
     row.commentBox:SetText("")
     row.commentHint:Show()
+    if row.metafs then row.metafs:Hide() end
     row:Hide()
     _finderResultRows[#_finderResultRows + 1] = row
 end
@@ -916,7 +932,8 @@ function UI:_PopulateFinderResults()
         row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -rowY)
 
         local isExpanded = (idx == _expandedResultIdx)
-        local rowH = isExpanded and 80 or 44
+        -- Collapsed: 46px (name + short desc). Expanded: 112px (full desc + meta + apply row).
+        local rowH = isExpanded and 112 or 46
         row:SetHeight(rowH)
 
         -- Alternating stripe
@@ -927,14 +944,33 @@ function UI:_PopulateFinderResults()
             row.bg:SetColorTexture(0, 0, 0, 0)
         end
 
+        -- Field names from WoW 12.x ReturnMatchingCommunityList:
+        --   name, comment (description), numActiveMembers, clubFinderGUID, guildLeader, minILvl
         row.namefs:SetText(club.name or "Unknown")
         row.namefs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
-        row.countfs:SetText((club.memberCount or 0) .. " members")
+
+        local memberCount = club.numActiveMembers or club.memberCount or 0
+        row.countfs:SetText(memberCount .. " members")
         row.countfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
-        local desc = (club.description or ""):sub(1, isExpanded and 200 or 80)
-        if not isExpanded and #(club.description or "") > 80 then desc = desc .. "…" end
+        local fullDesc = club.comment or club.description or ""
+        local desc = fullDesc:sub(1, isExpanded and 400 or 110)
+        if not isExpanded and #fullDesc > 110 then desc = desc .. "…" end
         row.descfs:SetText(desc)
+
+        if isExpanded and row.metafs then
+            local parts = {}
+            if club.guildLeader and club.guildLeader ~= "" then
+                parts[#parts+1] = "Leader: " .. club.guildLeader
+            end
+            if club.minILvl and club.minILvl > 0 then
+                parts[#parts+1] = "Min iLvl: " .. club.minILvl
+            end
+            row.metafs:SetText(table.concat(parts, "   ·   "))
+            row.metafs:Show()
+        elseif row.metafs then
+            row.metafs:Hide()
+        end
 
         row.applyBtn:SetShown(isExpanded)
         row.commentBox:SetShown(isExpanded)
