@@ -80,77 +80,56 @@ function CD:MarkRead(clubId, streamId)
     pcall(C_Club.AdvanceStreamViewMarker, clubId, streamId)
 end
 
--- Initiates a community search. Results arrive via CLUB_FINDER_CLUBS_LOADED.
+-- Initiates a community search.
+-- WoW 12.x API: RequestClubsList(guildListRequested, searchString, specIDs)
+--   false = community list, {} = no spec filter
 function CD:SearchFinder(searchTerm)
-    if GuildHub._debugMode then
-        if not C_ClubFinder then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r C_ClubFinder is nil")
-        else
-            local fns = {}
-            for k in pairs(C_ClubFinder) do fns[#fns+1] = k end
-            table.sort(fns)
-            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r C_ClubFinder keys: " .. table.concat(fns, ", "))
-        end
-    end
-
-    if not C_ClubFinder then return end
-
-    -- Lazy-register the search-result events; they may not be available at ADDON_LOADED time.
+    if not (C_ClubFinder and C_ClubFinder.RequestClubsList) then return end
+    -- Lazy-register search-result events (not available at ADDON_LOADED time).
     if CD.eventFrame then
-        for _, ev in ipairs({ "CLUB_FINDER_CLUBS_LOADED", "CLUB_FINDER_RECRUIT_LIST_LOADED",
-                               "CLUB_FINDER_CLUBS_LOADED_RESULT" }) do
+        for _, ev in ipairs({ "CLUB_FINDER_RECRUIT_LIST_LOADED", "CLUB_FINDER_CLUBS_LOADED" }) do
             pcall(CD.eventFrame.RegisterEvent, CD.eventFrame, ev)
         end
     end
-
-    -- Try SearchClubs (old API), fall back to RequestClubsList (new API).
-    if C_ClubFinder.SearchClubs then
-        local ok, err = pcall(C_ClubFinder.SearchClubs, searchTerm, Enum.ClubType.BattleNet,
-                              nil, 0, nil, 0, 0, 0, 0, 0, 0)
-        if GuildHub._debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r SearchClubs ok=" ..
-                tostring(ok) .. " err=" .. tostring(err))
-        end
-    elseif C_ClubFinder.RequestClubsList then
-        local ok, err = pcall(C_ClubFinder.RequestClubsList, searchTerm,
-                              Enum.ClubType.BattleNet, nil, 0, nil, 0, 0, 0, 0, 0, 0)
-        if GuildHub._debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r RequestClubsList ok=" ..
-                tostring(ok) .. " err=" .. tostring(err))
-        end
-    else
-        if GuildHub._debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r No search function found in C_ClubFinder")
-        end
+    local ok, err = pcall(C_ClubFinder.RequestClubsList, false, searchTerm, {})
+    if GuildHub._debugMode then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r RequestClubsList ok=" ..
+            tostring(ok) .. " err=" .. tostring(err))
     end
 end
 
--- Caches finder results after CLUB_FINDER_CLUBS_LOADED fires.
--- Returns cached array of ClubFinderCandidateClubData.
+-- Retrieves community search results after the search event fires.
+-- WoW 12.x API: ReturnMatchingCommunityList() → array of community data tables.
 function CD:CacheFinderResults()
-    if not (C_ClubFinder and C_ClubFinder.GetRecruitingClubs) then
+    if not (C_ClubFinder and C_ClubFinder.ReturnMatchingCommunityList) then
         CD._finderResults = {}
         return {}
     end
-    -- Try no-arg form first (returns all search results regardless of type),
-    -- then fall back to the offset/count form if that returns nothing.
-    local ok, results = pcall(C_ClubFinder.GetRecruitingClubs)
-    if not ok or type(results) ~= "table" or #results == 0 then
-        ok, results = pcall(C_ClubFinder.GetRecruitingClubs, 0, 50)
-    end
+    local ok, results = pcall(C_ClubFinder.ReturnMatchingCommunityList)
     if GuildHub._debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r GetRecruitingClubs ok=" ..
-            tostring(ok) .. " type=" .. type(results) ..
-            " count=" .. (type(results) == "table" and #results or "n/a"))
+        local sample = (ok and type(results) == "table" and #results > 0)
+                       and results[1] or nil
+        local sampleKeys = ""
+        if sample then
+            local ks = {}
+            for k in pairs(sample) do ks[#ks+1] = k .. "=" .. tostring(sample[k]) end
+            sampleKeys = " sample={" .. table.concat(ks, ",") .. "}"
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r ReturnMatchingCommunityList ok=" ..
+            tostring(ok) .. " count=" .. (type(results) == "table" and #results or "n/a") ..
+            sampleKeys)
     end
     CD._finderResults = (ok and type(results) == "table") and results or {}
     return CD._finderResults
 end
 
 -- Submits an application to a club found via the finder.
+-- WoW 12.x API: RequestMembershipToClub(clubFinderGUID, comment)
 function CD:ApplyToClub(clubFinderGUID, comment)
-    if not (C_ClubFinder and C_ClubFinder.ApplyToClub) then return end
-    pcall(C_ClubFinder.ApplyToClub, clubFinderGUID, comment or "")
+    if not C_ClubFinder then return end
+    local fn = C_ClubFinder.RequestMembershipToClub or C_ClubFinder.ApplyToClub
+    if not fn then return end
+    pcall(fn, clubFinderGUID, comment or "")
 end
 
 -- Creates a new BattleNet community.
