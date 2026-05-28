@@ -168,6 +168,48 @@ function Groups:Get(id)
     return GH.DB:GetGroups()[id]
 end
 
+-- Returns all teams stored in the local DB, regardless of membership or rank.
+-- Each entry includes isMember = true|false for the current player.
+-- Pending (conflict-duplicate) teams are excluded for non-officers.
+-- Used by the Teams tab to render the full team browser including Apply buttons.
+-- GetAll() is unchanged and continues to be used everywhere else.
+function Groups:GetAllForBrowsing()
+    local myName    = GH:GetPlayerName()
+    local isOfficer = GH:IsOfficer()
+
+    -- Start with the regular GetAll result and tag each entry.
+    local existing = Groups:GetAll()
+    local seen     = {}
+    for _, g in ipairs(existing) do
+        local isMem = false
+        for _, n in ipairs(g.members or {}) do
+            if n == myName then isMem = true; break end
+        end
+        g.isMember = isMem
+        seen[g.id] = true
+    end
+
+    -- Add any teams from the DB not returned by GetAll.
+    -- Pending teams are only shown to officers (same rule as GetAll).
+    for id, g in pairs(GH.DB:GetGroups()) do
+        if not seen[id] and (not g.pending or isOfficer) then
+            existing[#existing + 1] = {
+                id        = id,
+                name      = g.name,
+                members   = g.members,
+                color     = g.color,
+                channelId = g.channelId,
+                pending   = g.pending,
+                createdAt = g.createdAt,
+                isMember  = false,
+            }
+        end
+    end
+
+    table.sort(existing, function(a, b) return a.name < b.name end)
+    return existing
+end
+
 function Groups:Create(name)
     local id = GH.DB:NewId()
     local _, _, rankIndex = GetGuildInfo("player")
