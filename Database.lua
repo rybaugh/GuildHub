@@ -463,8 +463,7 @@ end
 
 function DB:GetTeamApplications(groupId)
     local gd = self:_GuildData()
-    if not gd or not gd.teamApplications then return {} end
-    return gd.teamApplications[groupId] or {}
+    return (gd and gd.teamApplications and gd.teamApplications[groupId]) or {}
 end
 
 function DB:SaveTeamApplication(groupId, applicantName, data)
