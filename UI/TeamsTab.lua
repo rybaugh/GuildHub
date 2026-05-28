@@ -141,20 +141,15 @@ function UI:CreateTeamsTab(parent)
 
     -- Tab container (fills left portion of strip, horizontal scroll)
     local tabScrollFrame = CreateFrame("ScrollFrame", nil, tabStrip)
-    tabScrollFrame:SetPoint("TOPLEFT",    tabStrip,  "TOPLEFT",    2, 0)
-    tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip,  "BOTTOMLEFT", 2, 0)
-    tabScrollFrame:SetPoint("RIGHT",      inviteBtn, "LEFT", -8, 0)
+    tabScrollFrame:SetPoint("TOPLEFT",    tabStrip, "TOPLEFT",    2, 0)
+    tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip, "BOTTOMLEFT", 2, 0)
+    tabScrollFrame:SetPoint("RIGHT",      appsBtn,  "LEFT",       -8, 0)
     tabScrollFrame:EnableMouseWheel(true)
     tabScrollFrame:SetScript("OnMouseWheel", function(sf, delta)
         local max = sf:GetHorizontalScrollRange()
         sf:SetHorizontalScroll(math.max(0, math.min(max, sf:GetHorizontalScroll() - delta * 80)))
     end)
     frame.tabScrollFrame = tabScrollFrame
-
-    frame.tabScrollFrame:ClearAllPoints()
-    frame.tabScrollFrame:SetPoint("TOPLEFT",    tabStrip, "TOPLEFT",    2, 0)
-    frame.tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip, "BOTTOMLEFT", 2, 0)
-    frame.tabScrollFrame:SetPoint("RIGHT",      appsBtn,  "LEFT",       -8, 0)
 
     local tabArea = CreateFrame("Frame", nil, tabScrollFrame)
     tabArea:SetHeight(TAB_H)
@@ -477,7 +472,7 @@ function UI:RefreshTeamsGroupList()
             if sfW <= 0 then return end
             local selX, selW = 0, 0
             local xCheck = 0
-            for _, g in ipairs(GH.Groups:GetAll()) do
+            for _, g in ipairs(GH.Groups:GetAllForBrowsing()) do
                 local tw = math.max(100, math.min(200, #g.name * 7 + 70 + (g.pending and 60 or 0)))
                 if g.id == selected then selX = xCheck; selW = tw; break end
                 xCheck = xCheck + tw
