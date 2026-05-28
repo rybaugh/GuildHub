@@ -685,6 +685,38 @@ end
 
 -- ── Finder panel ─────────────────────────────────────────────────────────────
 
+-- Focus index → display info. Indices come from C_ClubFinder.GetFocusIndexFromFlag.
+local FOCUS_INDEX_INFO = {
+    [1]  = { label = "Questing",  hex = "99FF66" },
+    [2]  = { label = "Dungeons",  hex = "66AAFF" },
+    [3]  = { label = "Raids",     hex = "FF8833" },
+    [4]  = { label = "Mythic+",   hex = "CC77FF" },
+    [5]  = { label = "PvP",       hex = "FF5555" },
+    [6]  = { label = "Social",    hex = "FFDD55" },
+    [7]  = { label = "Leveling",  hex = "55FFCC" },
+    [8]  = { label = "RP",        hex = "FFAA44" },
+}
+
+-- Decode a recruitmentFlags bitmask into a displayable colored-tag string.
+local function DecodeFocusLabels(flags)
+    if not (C_ClubFinder and C_ClubFinder.GetFocusIndexFromFlag) then return "" end
+    if not flags or flags == 0 then return "" end
+    local out = {}
+    for b = 0, 29 do
+        local fv = bit.lshift(1, b)
+        if bit.band(flags, fv) ~= 0 then
+            local ok, idx = pcall(C_ClubFinder.GetFocusIndexFromFlag, fv)
+            if ok and idx and idx > 0 then
+                local info = FOCUS_INDEX_INFO[idx]
+                if info then
+                    out[#out+1] = "|cff" .. info.hex .. info.label .. "|r"
+                end
+            end
+        end
+    end
+    return table.concat(out, "  ")
+end
+
 local _finderResultRows  = {}
 local _expandedResultIdx = nil
 
@@ -693,7 +725,7 @@ local function AcquireFinderRow(parent)
     if row then row:SetParent(parent); return row end
 
     row = CreateFrame("Frame", nil, parent)
-    row:SetHeight(46)
+    row:SetHeight(58)   -- collapsed: name + desc + focus
 
     local bg = row:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -722,7 +754,15 @@ local function AcquireFinderRow(parent)
     descfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     row.descfs = descfs
 
-    -- Meta line: leader + min ilvl (only shown when expanded)
+    -- Focus tags (line 3 collapsed / repositioned when expanded)
+    local focusfs = S:FS(row, "OVERLAY")
+    focusfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -44)
+    focusfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -44)
+    focusfs:SetJustifyH("LEFT")
+    focusfs:SetWordWrap(false)
+    row.focusfs = focusfs
+
+    -- Meta line: leader + min ilvl (only shown when expanded, between desc and focus)
     local metafs = S:FS(row, "OVERLAY")
     metafs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10, -62)
     metafs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, -62)
@@ -762,7 +802,8 @@ local function ReleaseFinderRow(row)
     row.applyBtn:Enable()
     row.commentBox:SetText("")
     row.commentHint:Show()
-    if row.metafs then row.metafs:Hide() end
+    if row.metafs  then row.metafs:Hide()    end
+    if row.focusfs then row.focusfs:SetText("") end
     row:Hide()
     _finderResultRows[#_finderResultRows + 1] = row
 end
@@ -932,8 +973,9 @@ function UI:_PopulateFinderResults()
         row:SetPoint("TOPRIGHT", sc, "TOPRIGHT", 0, -rowY)
 
         local isExpanded = (idx == _expandedResultIdx)
-        -- Collapsed: 46px (name + short desc). Expanded: 112px (full desc + meta + apply row).
-        local rowH = isExpanded and 112 or 46
+        -- Collapsed: 58px (name + 1-line desc + focus tags).
+        -- Expanded: 145px (name + full desc + meta + focus + apply row).
+        local rowH = isExpanded and 145 or 58
         row:SetHeight(rowH)
 
         -- Alternating stripe
@@ -954,10 +996,12 @@ function UI:_PopulateFinderResults()
         row.countfs:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
         local fullDesc = club.comment or club.description or ""
-        local desc = fullDesc:sub(1, isExpanded and 400 or 110)
-        if not isExpanded and #fullDesc > 110 then desc = desc .. "…" end
+        -- Collapsed: 1 line (~90 chars). Expanded: up to 3 lines (~180 chars).
+        local desc = fullDesc:sub(1, isExpanded and 180 or 90)
+        if #fullDesc > (isExpanded and 180 or 90) then desc = desc .. "…" end
         row.descfs:SetText(desc)
 
+        -- Meta line (leader + ilvl) — expanded only
         if isExpanded and row.metafs then
             local parts = {}
             if club.guildLeader and club.guildLeader ~= "" then
@@ -970,6 +1014,16 @@ function UI:_PopulateFinderResults()
             row.metafs:Show()
         elseif row.metafs then
             row.metafs:Hide()
+        end
+
+        -- Focus tags — always shown; repositioned below meta when expanded
+        if row.focusfs then
+            local focusTags = DecodeFocusLabels(club.recruitmentFlags)
+            row.focusfs:SetText(focusTags)
+            row.focusfs:ClearAllPoints()
+            local focusY = isExpanded and -82 or -44
+            row.focusfs:SetPoint("TOPLEFT",  row, "TOPLEFT",  10,  focusY)
+            row.focusfs:SetPoint("TOPRIGHT", row, "TOPRIGHT", -10, focusY)
         end
 
         row.applyBtn:SetShown(isExpanded)
