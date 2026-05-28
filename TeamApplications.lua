@@ -232,6 +232,16 @@ function TeamApps:_HandleResponse(parts)
     if existing then
         existing.status = status
         GH.DB:SaveTeamApplication(groupId, applicant, existing)
+    else
+        GH.DB:SaveTeamApplication(groupId, applicant, {
+            role   = "",
+            main   = applicant,
+            alts   = "",
+            logURL = "",
+            notes  = "",
+            ts     = 0,
+            status = status,
+        })
     end
 
     -- Notify the applicant if this is their own application.
