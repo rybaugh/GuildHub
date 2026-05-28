@@ -20,6 +20,8 @@ GuildRecruitPost.lua
 PlayerProfiles.lua
 ProfileSync.lua
 ActivityLog.lua
+TeamApplications.lua
+UI/TeamAppsDialog.lua
 CommunityData.lua
 UI/Styles.lua
 UI/MainWindow.lua

@@ -20,6 +20,7 @@ GH.ProfileSync = GH.ProfileSync or {}
 GH.ActivityLog = GH.ActivityLog or {}
 GH.Communities = GH.Communities or {}
 GH.Permissions = GH.Permissions or {}
+GH.TeamApps = GH.TeamApps or {}
 
 function GH:Initialize()
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -37,6 +38,7 @@ function GH:Initialize()
     self.GuildRecruit:Initialize()
     self.Profiles:Initialize()
     self.ActivityLog:Initialize()
+    self.TeamApps:Initialize()
     self.ProfileSync:Initialize()
     self.Communities:Initialize()
     self.UI:Initialize()

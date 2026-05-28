@@ -82,6 +82,7 @@ local GUILD_DEFAULTS = {
                                 --            customNote, customNoteEditor, customNoteTs,
                                 --            isBanned, banReason, banDate, bannedBy }
     altGroups           = {},   -- [groupId] = { main, alts={}, ts }
+    teamApplications    = {},   -- [groupId][applicantName] = {role,main,alts,logURL,notes,ts,status}
     activityLog         = {},   -- [{type, player, ts, detail, actor}]  capped 2000
     newsBuffer          = {},   -- [{name, desc, iconTex, rawLink, ts}]  capped 50, newest-first
     -- Guild Recruitment (posting to in-game Guild Finder)
@@ -456,6 +457,35 @@ end
 function DB:DeleteAltGroup(groupId)
     local gd = self:_GuildData()
     if gd and gd.altGroups then gd.altGroups[groupId] = nil end
+end
+
+-- Team Applications -------------------------------------------------------
+
+function DB:GetTeamApplications(groupId)
+    local gd = self:_GuildData()
+    if not gd or not gd.teamApplications then return {} end
+    return gd.teamApplications[groupId] or {}
+end
+
+function DB:SaveTeamApplication(groupId, applicantName, data)
+    local gd = self:_GuildData()
+    if not gd then return end
+    gd.teamApplications = gd.teamApplications or {}
+    gd.teamApplications[groupId] = gd.teamApplications[groupId] or {}
+    gd.teamApplications[groupId][applicantName] = data
+end
+
+function DB:DeleteTeamApplication(groupId, applicantName)
+    local gd = self:_GuildData()
+    if not gd or not gd.teamApplications then return end
+    if gd.teamApplications[groupId] then
+        gd.teamApplications[groupId][applicantName] = nil
+    end
+end
+
+function DB:GetAllTeamApplications()
+    local gd = self:_GuildData()
+    return (gd and gd.teamApplications) or {}
 end
 
 -- Activity Log --------------------------------------------------------------
