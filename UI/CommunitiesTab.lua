@@ -824,15 +824,25 @@ function UI:_CreateCommunityFinderPanel(parent)
     statusFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     panel.statusFS = statusFS
 
-    local _searchTimer = nil
+    local _searchTimer  = nil
+    local _searchTimer2 = nil
     local function DoSearch()
         local term = searchBox:GetText():match("^%s*(.-)%s*$")
         statusFS:SetText("Searching…")
         GH.Communities:SearchFinder(term)
-        -- Fallback poll: in case the search-complete event doesn't fire, refresh after 2 s
-        if _searchTimer then _searchTimer:Cancel() end
-        _searchTimer = C_Timer.NewTimer(2, function()
+        -- Fallback polls in case the search-complete event is missed.
+        -- First attempt at 3 s, second attempt at 6 s for slow connections.
+        if _searchTimer  then _searchTimer:Cancel()  end
+        if _searchTimer2 then _searchTimer2:Cancel() end
+        _searchTimer = C_Timer.NewTimer(3, function()
             _searchTimer = nil
+            if panel and panel:IsShown() then
+                GH.Communities:CacheFinderResults()
+                UI:_PopulateFinderResults()
+            end
+        end)
+        _searchTimer2 = C_Timer.NewTimer(6, function()
+            _searchTimer2 = nil
             if panel and panel:IsShown() then
                 GH.Communities:CacheFinderResults()
                 UI:_PopulateFinderResults()

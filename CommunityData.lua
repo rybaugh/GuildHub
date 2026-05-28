@@ -82,11 +82,24 @@ end
 
 -- Initiates a community search. Results arrive via CLUB_FINDER_CLUBS_LOADED.
 function CD:SearchFinder(searchTerm)
-    if not (C_ClubFinder and C_ClubFinder.SearchClubs) then return end
-    -- Parameters: searchTerm, clubType, locale, ageRating, language,
-    --   minLevel, maxLevel, minMemberCount, maxMemberCount, playstyle, characteristics
-    pcall(C_ClubFinder.SearchClubs, searchTerm, Enum.ClubType.BattleNet,
-          GetLocale(), 0, "", 0, 0, 0, 0, 0, 0)
+    if not (C_ClubFinder and C_ClubFinder.SearchClubs) then
+        if GuildHub._debugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r C_ClubFinder.SearchClubs not available")
+        end
+        return
+    end
+    -- Lazy-register the search-result event; it may not be available at ADDON_LOADED time.
+    if CD.eventFrame then
+        pcall(CD.eventFrame.RegisterEvent, CD.eventFrame, "CLUB_FINDER_CLUBS_LOADED")
+    end
+    -- Pass nil for locale/ageRating/language so the server uses its own defaults;
+    -- passing GetLocale() can cause empty results on non-English realms.
+    local ok, err = pcall(C_ClubFinder.SearchClubs, searchTerm, Enum.ClubType.BattleNet,
+                          nil, 0, nil, 0, 0, 0, 0, 0, 0)
+    if GuildHub._debugMode then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r SearchClubs ok=" ..
+            tostring(ok) .. " err=" .. tostring(err))
+    end
 end
 
 -- Caches finder results after CLUB_FINDER_CLUBS_LOADED fires.
@@ -96,7 +109,17 @@ function CD:CacheFinderResults()
         CD._finderResults = {}
         return {}
     end
-    local ok, results = pcall(C_ClubFinder.GetRecruitingClubs, 0, 50)
+    -- Try no-arg form first (returns all search results regardless of type),
+    -- then fall back to the offset/count form if that returns nothing.
+    local ok, results = pcall(C_ClubFinder.GetRecruitingClubs)
+    if not ok or type(results) ~= "table" or #results == 0 then
+        ok, results = pcall(C_ClubFinder.GetRecruitingClubs, 0, 50)
+    end
+    if GuildHub._debugMode then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r GetRecruitingClubs ok=" ..
+            tostring(ok) .. " type=" .. type(results) ..
+            " count=" .. (type(results) == "table" and #results or "n/a"))
+    end
     CD._finderResults = (ok and type(results) == "table") and results or {}
     return CD._finderResults
 end
