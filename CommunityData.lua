@@ -82,23 +82,46 @@ end
 
 -- Initiates a community search. Results arrive via CLUB_FINDER_CLUBS_LOADED.
 function CD:SearchFinder(searchTerm)
-    if not (C_ClubFinder and C_ClubFinder.SearchClubs) then
-        if GuildHub._debugMode then
-            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r C_ClubFinder.SearchClubs not available")
-        end
-        return
-    end
-    -- Lazy-register the search-result event; it may not be available at ADDON_LOADED time.
-    if CD.eventFrame then
-        pcall(CD.eventFrame.RegisterEvent, CD.eventFrame, "CLUB_FINDER_CLUBS_LOADED")
-    end
-    -- Pass nil for locale/ageRating/language so the server uses its own defaults;
-    -- passing GetLocale() can cause empty results on non-English realms.
-    local ok, err = pcall(C_ClubFinder.SearchClubs, searchTerm, Enum.ClubType.BattleNet,
-                          nil, 0, nil, 0, 0, 0, 0, 0, 0)
     if GuildHub._debugMode then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r SearchClubs ok=" ..
-            tostring(ok) .. " err=" .. tostring(err))
+        if not C_ClubFinder then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r C_ClubFinder is nil")
+        else
+            local fns = {}
+            for k in pairs(C_ClubFinder) do fns[#fns+1] = k end
+            table.sort(fns)
+            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r C_ClubFinder keys: " .. table.concat(fns, ", "))
+        end
+    end
+
+    if not C_ClubFinder then return end
+
+    -- Lazy-register the search-result events; they may not be available at ADDON_LOADED time.
+    if CD.eventFrame then
+        for _, ev in ipairs({ "CLUB_FINDER_CLUBS_LOADED", "CLUB_FINDER_RECRUIT_LIST_LOADED",
+                               "CLUB_FINDER_CLUBS_LOADED_RESULT" }) do
+            pcall(CD.eventFrame.RegisterEvent, CD.eventFrame, ev)
+        end
+    end
+
+    -- Try SearchClubs (old API), fall back to RequestClubsList (new API).
+    if C_ClubFinder.SearchClubs then
+        local ok, err = pcall(C_ClubFinder.SearchClubs, searchTerm, Enum.ClubType.BattleNet,
+                              nil, 0, nil, 0, 0, 0, 0, 0, 0)
+        if GuildHub._debugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r SearchClubs ok=" ..
+                tostring(ok) .. " err=" .. tostring(err))
+        end
+    elseif C_ClubFinder.RequestClubsList then
+        local ok, err = pcall(C_ClubFinder.RequestClubsList, searchTerm,
+                              Enum.ClubType.BattleNet, nil, 0, nil, 0, 0, 0, 0, 0, 0)
+        if GuildHub._debugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r RequestClubsList ok=" ..
+                tostring(ok) .. " err=" .. tostring(err))
+        end
+    else
+        if GuildHub._debugMode then
+            DEFAULT_CHAT_FRAME:AddMessage("|cff7289daGuildHub:|r No search function found in C_ClubFinder")
+        end
     end
 end
 
