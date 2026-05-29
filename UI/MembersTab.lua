@@ -15,10 +15,11 @@ local COLS = {
     { label = "Rank",     x = 155, w = 75  },
     { label = "Lvl",      x = 235, w = 40  },
     { label = "M+",       x = 280, w = 60  },
-    { label = "Zone",     x = 345, w = 110 },
-    { label = "Team",     x = 460, w = 70  },
-    { label = "Note",     x = 535, w = 110 },
-    { label = "Personal", x = 650, w = 160 },
+    { label = "Zone",     x = 345, w = 90  },
+    { label = "Offline",  x = 440, w = 55  },
+    { label = "Team",     x = 500, w = 65  },
+    { label = "Note",     x = 570, w = 100 },
+    { label = "Personal", x = 675, w = 145 },
 }
 
 local ROW_POOL    = {}
@@ -38,6 +39,10 @@ local SORT_MAP = {
     ["Lvl"]      = function(m) return m.level or 0 end,
     ["M+"]       = function(m) return GH.DB:GetMemberScore(m.fullName) or 0 end,
     ["Zone"]     = function(m) return (m.zone or ""):lower() end,
+    ["Offline"]  = function(m)
+        if m.online then return -1 end
+        return m.daysOffline or 0
+    end,
     ["Team"]     = function(m)
         local teams = GH.GuildData:GetMemberTeams(m.name)
         return #teams > 0 and teams[1].name:lower() or "~"
@@ -300,9 +305,15 @@ local function GetOrCreateRow(index, parent)
     zoneText:SetJustifyH("LEFT")
     row.zoneText = zoneText
 
+    local offlineText = S:FS(row, "OVERLAY")
+    offlineText:SetPoint("LEFT", row, "LEFT", COLS[6].x, 0)
+    offlineText:SetWidth(COLS[6].w)
+    offlineText:SetJustifyH("LEFT")
+    row.offlineText = offlineText
+
     local teamBtn = CreateFrame("Button", nil, row)
-    teamBtn:SetPoint("LEFT", row, "LEFT", COLS[6].x, 0)
-    teamBtn:SetSize(COLS[6].w, S.ROW_H - 4)
+    teamBtn:SetPoint("LEFT", row, "LEFT", COLS[7].x, 0)
+    teamBtn:SetSize(COLS[7].w, S.ROW_H - 4)
     teamBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     local teamText = S:FS(teamBtn, "OVERLAY")
     teamText:SetAllPoints()
@@ -311,20 +322,20 @@ local function GetOrCreateRow(index, parent)
     row.teamText = teamText
 
     local noteText = S:FS(row, "OVERLAY")
-    noteText:SetPoint("LEFT", row, "LEFT", COLS[7].x, 0)
-    noteText:SetSize(COLS[7].w, S.ROW_H)
+    noteText:SetPoint("LEFT", row, "LEFT", COLS[8].x, 0)
+    noteText:SetSize(COLS[8].w, S.ROW_H)
     noteText:SetJustifyH("LEFT")
     noteText:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
     row.noteText = noteText
 
     local personalBtn = CreateFrame("Button", nil, row)
-    personalBtn:SetPoint("TOPLEFT",    row, "TOPLEFT",    COLS[8].x,  2)
-    personalBtn:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", COLS[8].x, -2)
-    personalBtn:SetWidth(COLS[8].w)
+    personalBtn:SetPoint("TOPLEFT",    row, "TOPLEFT",    COLS[9].x,  2)
+    personalBtn:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", COLS[9].x, -2)
+    personalBtn:SetWidth(COLS[9].w)
     personalBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     local personalText = S:FS(personalBtn, "OVERLAY")
     personalText:SetPoint("TOPLEFT", personalBtn, "TOPLEFT", 0, -2)
-    personalText:SetWidth(COLS[8].w)
+    personalText:SetWidth(COLS[9].w)
     personalText:SetWordWrap(true)
     personalText:SetJustifyH("LEFT")
     personalText:SetJustifyV("TOP")
@@ -369,7 +380,14 @@ local function GetOrCreateRow(index, parent)
 
         -- Status (only if not simply online)
         if not m.online then
-            GameTooltip:AddLine("Offline",
+            local offlineLabel = "Offline"
+            if m.daysOffline then
+                offlineLabel = offlineLabel .. "  ·  "
+                    .. (m.daysOffline == 0 and "< 1 day"
+                        or m.daysOffline == 1 and "1 day"
+                        or m.daysOffline .. " days")
+            end
+            GameTooltip:AddLine(offlineLabel,
                 S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3])
         elseif m.status == 1 then
             GameTooltip:AddLine("Away", S.COLOR.AFK[1], S.COLOR.AFK[2], S.COLOR.AFK[3])
@@ -674,6 +692,16 @@ function UI:RefreshMembersTab()
             row.zoneText:SetText("")
         end
 
+        -- Offline days
+        if not member.online and member.daysOffline ~= nil then
+            local d = member.daysOffline
+            row.offlineText:SetText(d == 0 and "< 1d" or d .. "d")
+            row.offlineText:SetTextColor(
+                S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+        else
+            row.offlineText:SetText("")
+        end
+
         -- Team (supports multiple teams)
         local teams = GH.GuildData:GetMemberTeams(member.name)
         if #teams > 0 then
@@ -850,7 +878,7 @@ function UI:ShowTeamAssignDialog(memberName)
     local teamsH   = math.max(1, #groups) * (BTN_H + BTN_GAP)
     local dlgH     = math.min(HEADER_H + teamsH + FOOTER_H, 420)
 
-    local dlg = CreateFrame("Frame", "GuildHubTeamAssignDialog", UIParent)
+    local dlg = CreateFrame("Frame", nil, UIParent)
     dlg:SetSize(240, dlgH)
     dlg:SetPoint("CENTER")
     dlg:SetFrameStrata("DIALOG")

@@ -339,6 +339,13 @@ function GD:Refresh()
                 rosterIndex   = i,
                 guid          = select(17, GetGuildRosterInfo(i)),
             }
+            if not online then
+                local fn = rawget(_G, "GetGuildRosterLastOnline")
+                if fn then
+                    local y, mo, d = fn(i)
+                    member.daysOffline = (y or 0) * 365 + (mo or 0) * 30 + (d or 0)
+                end
+            end
             self.members[#self.members + 1] = member
             self.byName[name] = member
         end

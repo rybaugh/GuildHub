@@ -345,7 +345,7 @@ function UI:CreateMainWindow()
             local ok, res = pcall(C_GuildInfo.CanInvite)
             if ok then return res == true end
         end
-        return GH:IsOfficer()
+        return GH:CanInvite()
     end
 
     -- Invite button — anchored left of the settings gear
