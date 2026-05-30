@@ -40,7 +40,7 @@ function P:LoadRankPermissions()
     local fresh = {}
     for ri = 1, numRanks - 1 do  -- skip 0 (GM); GM handled as special case in HasPermission
         local ok, flags = pcall(function() return { getRankFlags(ri) } end)
-        if ok and flags then
+        if ok and flags and #flags > 0 then
             fresh[ri] = flags
         end
     end
@@ -51,6 +51,10 @@ function GH:HasPermission(flag)
     local _, _, rankIndex = GetGuildInfo("player")
     if rankIndex == nil then return false end
     if rankIndex == 0 then return true end  -- GM always has all permissions
+    -- Lazy-load if cache is empty (checked before GUILD_ROSTER_UPDATE fired)
+    if not next(GH._rankFlags) then
+        GH.Permissions:LoadRankPermissions()
+    end
     local flags = GH._rankFlags[rankIndex]
     if not flags then return false end
     local v = flags[flag]
@@ -59,6 +63,10 @@ end
 
 function P:Initialize()
     self:LoadRankPermissions()
+    -- Request the roster so GUILD_ROSTER_UPDATE fires and populates rank flags.
+    if C_GuildInfo and C_GuildInfo.GuildRoster then
+        C_GuildInfo.GuildRoster()
+    end
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("GUILD_ROSTER_UPDATE")
     frame:RegisterEvent("PLAYER_GUILD_UPDATE")

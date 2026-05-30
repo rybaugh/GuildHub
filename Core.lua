@@ -59,27 +59,57 @@ function GH:IsGuildMaster()
 end
 
 function GH:IsOfficer()
-    return GH:HasPermission(GH.PERM.OFFICER_CHAT_SPEAK)
+    if GH:IsGuildMaster() then return true end
+    -- Primary: officer chat speak flag from rank cache
+    if next(GH._rankFlags) then
+        return GH:HasPermission(GH.PERM.OFFICER_CHAT_SPEAK)
+    end
+    -- Fallback: WoW built-in APIs when rank flags aren't loaded yet
+    local canInvite = rawget(_G, "CanGuildInvite")
+    if canInvite and canInvite() then return true end
+    local canRemove = rawget(_G, "CanGuildRemove")
+    if canRemove and canRemove() then return true end
+    return false
 end
 
 function GH:CanEditPublicNote()
-    return GH:HasPermission(GH.PERM.EDIT_PUBLIC_NOTE)
+    if next(GH._rankFlags) then
+        return GH:HasPermission(GH.PERM.EDIT_PUBLIC_NOTE)
+    end
+    -- Fallback: editing public notes is an officer-level action
+    return GH:IsOfficer()
 end
 
 function GH:CanPromote()
-    return GH:HasPermission(GH.PERM.PROMOTE)
+    if next(GH._rankFlags) then
+        return GH:HasPermission(GH.PERM.PROMOTE)
+    end
+    local fn = rawget(_G, "CanGuildPromote")
+    return fn and fn() or false
 end
 
 function GH:CanDemote()
-    return GH:HasPermission(GH.PERM.DEMOTE)
+    if next(GH._rankFlags) then
+        return GH:HasPermission(GH.PERM.DEMOTE)
+    end
+    local fn = rawget(_G, "CanGuildDemote")
+    return fn and fn() or false
 end
 
 function GH:CanInvite()
-    return GH:HasPermission(GH.PERM.INVITE)
+    if next(GH._rankFlags) then
+        return GH:HasPermission(GH.PERM.INVITE)
+    end
+    local fn = rawget(_G, "CanGuildInvite")
+    return fn and fn() or false
 end
 
 function GH:CanRemoveMember()
-    return GH:HasPermission(GH.PERM.REMOVE)
+    if next(GH._rankFlags) then
+        return GH:HasPermission(GH.PERM.REMOVE)
+    end
+    local fn = rawget(_G, "CanGuildRemove")
+    return fn and fn() or false
 end
 
 function GH:CanViewOfficerNote()

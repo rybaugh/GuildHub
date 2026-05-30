@@ -294,7 +294,11 @@ function UI:ShowProfilePanel(memberData)
     panel.nameLabel:SetText(memberData.name)
 
     panel.inviteBtn:SetScript("OnClick", function()
-        InviteUnit(name)
+        local fn = rawget(_G, "InviteUnit")
+        if fn then fn(name)
+        elseif C_PartyInfo and C_PartyInfo.InviteUnit then
+            C_PartyInfo.InviteUnit(name)
+        end
     end)
 
     local realm = memberData.fullName and memberData.fullName:match("%-(.+)$")
