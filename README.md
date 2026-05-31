@@ -51,3 +51,7 @@ You can also click the minimap button (draggable to any position) or press **G**
 ## Author
 
 Storm
+
+## Credits
+
+Special thanks to the **Knights of the Alliance** guild on **Lightbringer (US)** for their invaluable help throughout development — serving as dedicated testers, providing feedback that shaped the addon's direction, and suggesting many of the features you see today.
