@@ -60,11 +60,12 @@ end
 
 function GH:IsOfficer()
     if GH:IsGuildMaster() then return true end
-    -- Primary: officer chat speak flag from rank cache
     if next(GH._rankFlags) then
         return GH:HasPermission(GH.PERM.OFFICER_CHAT_SPEAK)
+            or GH:HasPermission(GH.PERM.PROMOTE)
+            or GH:HasPermission(GH.PERM.DEMOTE)
+            or GH:HasPermission(GH.PERM.REMOVE)
     end
-    -- Fallback: WoW built-in APIs when rank flags aren't loaded yet
     local canInvite = rawget(_G, "CanGuildInvite")
     if canInvite and canInvite() then return true end
     local canRemove = rawget(_G, "CanGuildRemove")
