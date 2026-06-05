@@ -778,9 +778,13 @@ function UI:ToggleSettings()
 
     if win.settingsPage and win.settingsPage:IsShown() then
         win.settingsPage:Hide()
-        -- Restore active tab
-        local t = win.activeTab
-        if t and UI[t .. "Tab"] then UI[t .. "Tab"]:Show() end
+        if win._settingsFromCommunities then
+            win._settingsFromCommunities = nil
+            if UI.CommunitiesTab then UI.CommunitiesTab:Show() end
+        else
+            local t = win.activeTab
+            if t and UI[t .. "Tab"] then UI[t .. "Tab"]:Show() end
+        end
         return
     end
 
@@ -789,10 +793,13 @@ function UI:ToggleSettings()
         UI:BuildSettingsPage(win.contentArea)
     end
 
+    win._settingsFromCommunities = UI.CommunitiesTab and UI.CommunitiesTab:IsShown() or false
+
     -- Hide all tab content and show settings
     for _, t in ipairs(TABS) do
         if UI[t .. "Tab"] then UI[t .. "Tab"]:Hide() end
     end
+    if UI.CommunitiesTab then UI.CommunitiesTab:Hide() end
     win.settingsPage:Show()
 end
 

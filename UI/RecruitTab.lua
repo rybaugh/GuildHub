@@ -680,6 +680,7 @@ function UI:CreateLFMTab(parent)
             end
         end
     end
+    frame._RefreshTypeBtns = RefreshTypeBtns
 
     local tbX = 70
     for _, actType in ipairs(GH.Recruit.ACTIVITY_TYPES) do
@@ -726,10 +727,18 @@ function UI:CreateLFMTab(parent)
 
     -- Post Group button
     local postBtn = S:Button(pp, "Post Group", 106, 26)
+    frame._postBtn = postBtn
     postBtn:SetPoint("BOTTOMRIGHT", pp, "BOTTOMRIGHT", -10, 10)
     postBtn:SetScript("OnClick", function()
         HideSignupPopup()
         if _activePicker then _activePicker:Hide(); _activePicker = nil end
+
+        local editingId = frame._editingPostId
+        frame._editingPostId = nil
+        frame._postBtn.label:SetText("Post Group")
+        if editingId then
+            GH.Recruit:Delete(editingId)
+        end
 
         local at = frame._selType
 
@@ -1049,8 +1058,18 @@ function UI:RefreshLFMList()
             local del = S:DangerButton(row, "Cancel", 62, 22)
             del:SetPoint("RIGHT", row, "RIGHT", -4, 0)
             del:SetScript("OnClick", function()
+                local f = UI.LFMTab
+                if f and f._editingPostId == pid then
+                    f._editingPostId = nil
+                    if f._postBtn then f._postBtn.label:SetText("Post Group") end
+                end
                 GH.Recruit:Delete(pid)
                 UI:RefreshLFMList()
+            end)
+            local editBtn = S:Button(row, "Edit", 52, 22)
+            editBtn:SetPoint("RIGHT", del, "LEFT", -4, 0)
+            editBtn:SetScript("OnClick", function()
+                UI:PopulateEditForm(captPost)
             end)
         elseif GH.Recruit:HasSignedUp(post) then
             local fs = S:FS(row, "OVERLAY")
@@ -1093,6 +1112,63 @@ function UI:_RefreshLFMFooter()
         .. CC(tostring(pts), S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
         .. "  ·  +" .. ps .. " pts per signup"
         .. "  ·  +" .. pg .. " pts when someone joins your group")
+end
+
+-- ──────────────────────────────────────────────────────────
+-- Populate the post form with data from an existing post (for editing)
+-- ──────────────────────────────────────────────────────────
+
+function UI:PopulateEditForm(post)
+    local frame = UI.LFMTab
+    if not frame then return end
+
+    frame._selType = post.activityType
+    if frame._RefreshTypeBtns then frame._RefreshTypeBtns() end
+    if frame._UpdateRoleSection then frame._UpdateRoleSection() end
+
+    if frame._descBox then
+        frame._descBox:SetText(post.body or "")
+    end
+
+    local at = post.activityType
+    if at == "Dungeon" then
+        if post.instanceName and frame._dungeonPicker then
+            frame._dungeonPicker.setDefault(post.instanceName)
+        end
+        if post.difficulty and frame._dungeonDiffPicker then
+            frame._dungeonDiffPicker.setDefault(post.difficulty)
+        end
+    elseif at == "Raid" then
+        if post.instanceName and frame._raidPicker then
+            frame._raidPicker.setDefault(post.instanceName)
+        end
+        if post.difficulty and frame._raidDiffPicker then
+            frame._raidDiffPicker.setDefault(post.difficulty)
+        end
+    end
+
+    local needsByRole = {}
+    for _, need in ipairs(post.needs or {}) do
+        needsByRole[need.role] = need.count
+    end
+    local function applyNeeds(states, roles)
+        for i, state in ipairs(states) do
+            state.val = needsByRole[roles[i]] or 0
+            if state.refresh then state.refresh() end
+        end
+    end
+    if at == "Dungeon" and frame._dungeonStates then
+        applyNeeds(frame._dungeonStates, frame._dungeonRoles)
+    elseif at == "Raid" and frame._raidStates then
+        applyNeeds(frame._raidStates, frame._raidRoles)
+    elseif (at == "Battleground" or at == "Arena") and frame._pvpStates then
+        applyNeeds(frame._pvpStates, frame._pvpRoles)
+    end
+
+    frame._editingPostId = post.id
+    if frame._postBtn then
+        frame._postBtn.label:SetText("Update Post")
+    end
 end
 
 -- ──────────────────────────────────────────────────────────

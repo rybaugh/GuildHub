@@ -585,6 +585,8 @@ function UI:RefreshTeamRoster(groupId)
         return
     end
 
+    local canManage = GH:CanManageTeam(groupId)
+
     local sorted = {}
     for _, name in ipairs(g.members) do
         local info = GH.GuildData:FindMember(name)
@@ -619,10 +621,14 @@ function UI:RefreshTeamRoster(groupId)
             row.dot = dot
 
             local nameFS = S:FS(row, "OVERLAY")
-            nameFS:SetPoint("LEFT",  row, "LEFT",  20, 0)
-            nameFS:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            nameFS:SetPoint("LEFT", row, "LEFT", 20, 0)
             nameFS:SetJustifyH("LEFT")
             row.nameFS = nameFS
+
+            local badgeFS = S:FS(row, "OVERLAY")
+            badgeFS:SetJustifyH("RIGHT")
+            badgeFS:Hide()
+            row.badgeFS = badgeFS
 
             rows[i] = row
         end
@@ -647,6 +653,47 @@ function UI:RefreshTeamRoster(groupId)
 
         row.nameFS:SetText(m.name)
         row.nameFS:SetTextColor(cr, cg, cb)
+
+        -- Role badge (officers/team managers only)
+        local role = canManage and g.memberRoles and g.memberRoles[m.name]
+        row.nameFS:ClearAllPoints()
+        row.nameFS:SetPoint("LEFT", row, "LEFT", 20, 0)
+        if role then
+            local roleColors = {
+                Roster = { 0.29, 0.67, 0.29 },
+                Bench  = { 0.67, 0.67, 0.19 },
+                Backup = { 0.48, 0.60, 0.48 },
+                Trial  = { 0.80, 0.40, 0.40 },
+                Alt    = { 0.40, 0.53, 0.67 },
+            }
+            local rc = roleColors[role] or { 0.55, 0.55, 0.55 }
+            row.badgeFS:ClearAllPoints()
+            row.badgeFS:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            row.badgeFS:SetText(role)
+            row.badgeFS:SetTextColor(rc[1], rc[2], rc[3])
+            row.badgeFS:Show()
+            row.nameFS:SetPoint("RIGHT", row.badgeFS, "LEFT", -4, 0)
+        else
+            row.badgeFS:SetText("")
+            row.badgeFS:Hide()
+            row.nameFS:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        end
+
+        -- Right-click to set role (officers/team managers only)
+        if canManage then
+            local capturedId   = groupId
+            local capturedName = m.name
+            row:EnableMouse(true)
+            row:SetScript("OnMouseUp", function(_self, button)
+                if button == "RightButton" then
+                    GH.UI:ShowTeamRoleMenu(capturedId, capturedName, _self)
+                end
+            end)
+        else
+            row:EnableMouse(false)
+            row:SetScript("OnMouseUp", nil)
+        end
+
         row:Show()
     end
 

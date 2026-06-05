@@ -245,6 +245,11 @@ function UI:_SelectCommunity(clubId)
     if _activeClubId and _activeStreamId then
         GH.Communities:MarkRead(_activeClubId, _activeStreamId)
     end
+    -- Request member data from the server; names are nil until this fires
+    -- CLUB_MEMBER_ADDED/UPDATED events, which trigger OnCommunityRosterUpdate.
+    if C_Club and C_Club.RequestMembers then
+        pcall(C_Club.RequestMembers, clubId)
+    end
 end
 
 -- ── Public entry points ───────────────────────────────────────────────────────
