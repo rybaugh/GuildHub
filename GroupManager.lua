@@ -73,6 +73,7 @@ function Groups:Initialize()
         if not GH:CanManageTeams() then return end
         local myName = GH:GetPlayerName()
         local delay  = 0
+        -- Existing: push TMSYN to online team members
         for groupId, g in pairs(GH.DB:GetGroups()) do
             for _, memberName in ipairs(g.members or {}) do
                 if memberName ~= myName then
@@ -81,6 +82,21 @@ function Groups:Initialize()
                         local gid, gData, mName = groupId, g, memberName
                         C_Timer.After(delay, function()
                             Groups:_SyncToMember(gid, gData, mName)
+                        end)
+                        delay = delay + 0.2
+                    end
+                end
+            end
+        end
+        -- New: push TMROL for each assigned role
+        for groupId, g in pairs(GH.DB:GetGroups()) do
+            if g.memberRoles then
+                for memberName, role in pairs(g.memberRoles) do
+                    if role then
+                        local gid, mName, r = groupId, memberName, role
+                        C_Timer.After(delay, function()
+                            local p = table.concat({ TM_ROL, gid, mName, r }, SEP)
+                            Groups:_Send(p)
                         end)
                         delay = delay + 0.2
                     end
@@ -278,6 +294,9 @@ function Groups:RemoveMember(id, memberName)
     for i, n in ipairs(g.members) do
         if n == memberName then
             table.remove(g.members, i)
+            if g.memberRoles then
+                g.memberRoles[memberName] = nil
+            end
             break
         end
     end
@@ -287,7 +306,7 @@ function Groups:RemoveMember(id, memberName)
     Groups:_OfficerSync(id, g)
 end
 
-function Groups:InviteAll(id)
+function Groups:InviteAll(id, roles)
     local g = GH.DB:GetGroups()[id]
     if not g then return end
     local myName = GH:GetPlayerName()
@@ -296,9 +315,13 @@ function Groups:InviteAll(id)
     if not doInvite then return end
     for _, memberName in ipairs(g.members) do
         if memberName ~= myName then
-            local info = GH.GuildData:FindMember(memberName)
-            if info and info.online then
-                doInvite(info.fullName)
+            local roleMatch = not roles
+                or (g.memberRoles and tContains(roles, g.memberRoles[memberName]))
+            if roleMatch then
+                local info = GH.GuildData:FindMember(memberName)
+                if info and info.online then
+                    doInvite(info.fullName)
+                end
             end
         end
     end
