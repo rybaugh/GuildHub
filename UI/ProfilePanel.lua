@@ -119,6 +119,10 @@ function UI:CreateProfilePanel(parent)
     panel.rankHistHdr,     panel.rankHistLine     = MakeSectionHdr("Rank History")
     panel.rankHistFS = MakeFS()
     panel.rankHistFS:SetSpacing(3)
+    panel.promoteBtn = S:Button(content, "Promote", bw, 24)
+    panel.demoteBtn  = S:DangerButton(content, "Demote", bw, 24)
+    panel.promoteBtn:Hide()
+    panel.demoteBtn:Hide()
 
     panel.customNoteHdr,   panel.customNoteLine   = MakeSectionHdr("Custom Note")
     panel.noteBox = S:EditBox(content, PANEL_W - 26, 64, 150)
@@ -208,6 +212,13 @@ function UI:CreateProfilePanel(parent)
         -- Rank History
         placeSection(self.rankHistHdr, self.rankHistLine)
         placeFS(self.rankHistFS)
+        if self.promoteBtn:IsShown() or self.demoteBtn:IsShown() then
+            self.promoteBtn:ClearAllPoints()
+            self.promoteBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y - 2)
+            self.demoteBtn:ClearAllPoints()
+            self.demoteBtn:SetPoint("LEFT", self.promoteBtn, "RIGHT", 4, 0)
+            y = y - 30
+        end
 
         -- Custom Note
         placeSection(self.customNoteHdr, self.customNoteLine)
@@ -362,6 +373,32 @@ function UI:ShowProfilePanel(memberData)
         end
         panel.rankHistFS:SetText(table.concat(lines, "\n"))
     end
+
+    -- Promote / Demote
+    local isSelf = (memberData.fullName == GH:GetPlayerName() or memberData.name == GH:GetPlayerName())
+    panel.promoteBtn:SetShown(not isSelf and GH:CanGuildPromote(memberData.rankIndex))
+    panel.demoteBtn:SetShown(not isSelf and GH:CanGuildDemote(memberData.rankIndex))
+
+    local function RankAction(apiFn)
+        if memberData.rosterIndex then
+            apiFn(memberData.rosterIndex)
+            if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
+            C_Timer.After(0.3, function()
+                for _, m in ipairs(GH.GuildData:GetMembers()) do
+                    if m.fullName == memberData.fullName then
+                        UI:ShowProfilePanel(m)
+                        break
+                    end
+                end
+            end)
+        end
+    end
+    panel.promoteBtn:SetScript("OnClick", function()
+        RankAction(GuildRosterPromote)
+    end)
+    panel.demoteBtn:SetScript("OnClick", function()
+        RankAction(GuildRosterDemote)
+    end)
 
     -- Custom note
     panel.noteBox:SetText(profile.customNote or "")
