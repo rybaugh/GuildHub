@@ -798,7 +798,9 @@ function Groups:OnAddonMessage(payload, _)
             if GH.UI then GH.UI:RefreshTeamsGroupList() end
         end
 
-    -- ── TMROL: team member role assignment ───────────────────────────────
+    -- ── TMROL: team member role assignment — stored by all clients ───────
+    -- No receive-side permission check: all clients cache role data for
+    -- consistency (same model as TM_OFC). UI display is gated separately.
     elseif msgType == TM_ROL then
         if #parts >= 4 then
             local groupId    = parts[2]
