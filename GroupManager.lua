@@ -12,6 +12,7 @@
 --   TMDLT \30 groupId
 --   TMDPC \30 pendingId \30 canonicalId  (duplicate conflict → GM)
 --   TMGMR \30 action \30 pendingId \30 canonicalId \30 [newName]  (GM resolution)
+--   TMROL \30 groupId \30 memberName \30 role                     (role assignment; "" clears)
 
 local GH     = GuildHub
 local Groups = GH.Groups
@@ -29,6 +30,7 @@ local TM_OFC = "TMOFC"   -- officer visibility sync (no membership implied)
 local TM_DLT = "TMDLT"  -- broadcast team deletion to all officers
 local TM_DPC = "TMDPC"  -- duplicate conflict notification → GM
 local TM_GMR = "TMGMR"  -- GM resolution broadcast → all officers
+local TM_ROL = "TMROL"
 
 Groups.pendingInvites = {}   -- [groupId] = { teamName, inviter }
 
@@ -316,6 +318,22 @@ function Groups:SetChannel(id, channelId)
         g.channelId = channelId
         GH.DB:SaveGroup(id, g)
     end
+end
+
+function Groups:SetMemberRole(groupId, memberName, role)
+    if not GH:CanManageTeam(groupId) then return end
+    local g = GH.DB:GetGroups()[groupId]
+    if not g then return end
+    g.memberRoles = g.memberRoles or {}
+    if role and role ~= "" then
+        g.memberRoles[memberName] = role
+    else
+        g.memberRoles[memberName] = nil
+    end
+    GH.DB:SaveGroup(groupId, g)
+    local payload = table.concat({ TM_ROL, groupId, memberName, role or "" }, SEP)
+    Groups:_Send(payload)
+    if GH.UI then GH.UI:RefreshTeamRoster(groupId) end
 end
 
 -- ── Invite API (called from UI) ───────────────────────────────────────────
@@ -778,6 +796,21 @@ function Groups:OnAddonMessage(payload, _)
             end
 
             if GH.UI then GH.UI:RefreshTeamsGroupList() end
+        end
+
+    -- ── TMROL: team member role assignment ───────────────────────────────
+    elseif msgType == TM_ROL then
+        if #parts >= 4 then
+            local groupId    = parts[2]
+            local memberName = parts[3]
+            local role       = parts[4] ~= "" and parts[4] or nil
+            local g = GH.DB:GetGroups()[groupId]
+            if g then
+                g.memberRoles = g.memberRoles or {}
+                g.memberRoles[memberName] = role
+                GH.DB:SaveGroup(groupId, g)
+                if GH.UI then GH.UI:RefreshTeamRoster(groupId) end
+            end
         end
     end
 end
