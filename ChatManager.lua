@@ -582,7 +582,7 @@ function Chat:GetChannels()
         out[#out + 1] = { id = OFFICER_ID, name = "Officer", isOfficer = true }
     end
     local custom = {}
-    local myName = GH:GetPlayerName()
+    local myName = GH:GetFullPlayerName()
     for id, ch in pairs(GH.DB:GetChats()) do
         if Chat:IsMember(id, myName) then
             custom[#custom + 1] = { id = id, name = ch.name, members = ch.members }
@@ -730,7 +730,7 @@ end
 function Chat:IsMember(channelId, playerName)
     if channelId == GUILD_ID or channelId == OFFICER_ID then return true end
     -- Officers can see all custom channels (team chats and group channels).
-    if playerName == GH:GetPlayerName() and GH:IsOfficer() then return true end
+    if playerName == GH:GetFullPlayerName() and GH:IsOfficer() then return true end
     local ch = GH.DB:GetChat(channelId)
     if not ch then return false end
     for _, n in ipairs(ch.members) do
@@ -771,7 +771,7 @@ function Chat:OnAddonMessage(payload, _)
         local ts        = tonumber(parts[4]) or GH:GetTimestamp()
         local text      = parts[5]
 
-        if not self:IsMember(channelId, GH:GetPlayerName()) then return end
+        if not self:IsMember(channelId, GH:GetFullPlayerName()) then return end
         if msgSender == GH:GetPlayerName() then return end
 
         local msg = { sender = msgSender, text = text, ts = ts }
@@ -787,7 +787,7 @@ function Chat:OnAddonMessage(payload, _)
         for m in (membersStr .. ","):gmatch("([^,]*),") do
             if m ~= "" then members[#members + 1] = m end
         end
-        local myName = GH:GetPlayerName()
+        local myName = GH:GetFullPlayerName()
         for _, n in ipairs(members) do
             if n == myName then
                 local existing = GH.DB:GetChat(channelId)

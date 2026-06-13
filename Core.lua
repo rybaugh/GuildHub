@@ -181,7 +181,7 @@ function GH:CanManageTeam(groupId)
     if not g then return false end
     if not g.creator then return GH:IsOfficer() end
     if myRankIndex == 0 then return true end
-    if g.creator == GH:GetPlayerName() then return true end
+    if g.creator == GH:GetFullPlayerName() or g.creator == GH:GetPlayerName() then return true end
     if g.creatorRank and myRankIndex < g.creatorRank then return true end
     return false
 end
@@ -193,6 +193,12 @@ end
 
 function GH:GetPlayerName()
     return UnitName("player") or "Unknown"
+end
+
+function GH:GetFullPlayerName()
+    local shortName = UnitName("player") or "Unknown"
+    local member = GH.GuildData and GH.GuildData:FindMember(shortName)
+    return (member and member.fullName) or shortName
 end
 
 function GH:GetTimestamp()

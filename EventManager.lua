@@ -73,7 +73,7 @@ function Events:GetAll()
         -- If teamOnly, skip events the current player isn't a member of.
         local visible = true
         if ev.teamOnly and ev.hostTeamId then
-            local myTeam = GH.GuildData:GetMemberTeam(GH:GetPlayerName())
+            local myTeam = GH.GuildData:GetMemberTeam(GH:GetFullPlayerName())
             if not (myTeam and myTeam.id == ev.hostTeamId) then
                 visible = false
             end

@@ -424,7 +424,7 @@ function GD:GetMembers(filter)
     local out = {}
     for _, m in ipairs(self.members) do
         local score = GH.DB:GetMemberScore(m.fullName) or 0
-        local team = self:GetMemberTeam(m.name)
+        local team = self:GetMemberTeam(m.fullName)
         local personal = GH.DB:GetMemberNote(m.fullName) or ""
         local levelStr = tostring(m.level or "")
         local scoreStr = score > 0 and tostring(score) or ""

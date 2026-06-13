@@ -44,7 +44,7 @@ local SORT_MAP = {
         return m.daysOffline or 0
     end,
     ["Team"]     = function(m)
-        local teams = GH.GuildData:GetMemberTeams(m.name)
+        local teams = GH.GuildData:GetMemberTeams(m.fullName)
         return #teams > 0 and teams[1].name:lower() or "~"
     end,
     ["Note"]     = function(m) return (m.note or ""):lower() end,
@@ -703,7 +703,7 @@ function UI:RefreshMembersTab()
         end
 
         -- Team (supports multiple teams)
-        local teams = GH.GuildData:GetMemberTeams(member.name)
+        local teams = GH.GuildData:GetMemberTeams(member.fullName)
         if #teams > 0 then
             local label = teams[1].name
             if #teams > 1 then label = label .. " |cff888899+" .. (#teams - 1) .. "|r" end
@@ -721,7 +721,7 @@ function UI:RefreshMembersTab()
                 if btn == "RightButton" then
                     UI:ShowMemberContextMenu(capturedMember)
                 elseif GH:CanManageTeams() then
-                    UI:ShowTeamAssignDialog(capturedMember.name)
+                    UI:ShowTeamAssignDialog(capturedMember.fullName)
                 end
             end)
             row.teamBtn:SetScript("OnEnter", function()
@@ -771,7 +771,7 @@ function UI:RefreshMembersTab()
             row.personalText:SetPoint("LEFT", row.personalBtn, "LEFT", 0, 0)
             row.personalText:SetJustifyV("MIDDLE")
             row.personalText:SetHeight(S.ROW_H)
-            row.personalText:SetText("|cff333355✎ Add note|r")
+            row.personalText:SetText("|cff333344—|r")
         end
 
         local strH = row.personalText:GetStringHeight()
@@ -890,7 +890,7 @@ function UI:ShowTeamAssignDialog(memberName)
 
     local title = S:FS(dlg, "OVERLAY", "normal")
     title:SetPoint("TOP", dlg, "TOP", 0, -12)
-    title:SetText("Manage Teams — " .. memberName)
+    title:SetText("Manage Teams — " .. (memberName:match("^([^%-]+)") or memberName))
     title:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
 
     local sf = CreateFrame("ScrollFrame", nil, dlg, "UIPanelScrollFrameTemplate")
@@ -999,7 +999,7 @@ function UI:ShowMemberContextMenu(member)
     if GH:CanManageTeams() then
         sep()
         item("Manage Teams", function()
-            UI:ShowTeamAssignDialog(member.name)
+            UI:ShowTeamAssignDialog(member.fullName)
         end)
     end
 
@@ -1010,18 +1010,12 @@ function UI:ShowMemberContextMenu(member)
         sep()
         if canPromote then
             item("Promote", function()
-                local fn = rawget(_G, "GuildPromote")
-                if fn then fn(member.name)
-                elseif C_GuildInfo and C_GuildInfo.Promote then C_GuildInfo.Promote(member.name)
-                end
+                if C_GuildInfo and C_GuildInfo.Promote then C_GuildInfo.Promote(member.name) end
             end)
         end
         if canDemote then
             item("Demote", function()
-                local fn = rawget(_G, "GuildDemote")
-                if fn then fn(member.name)
-                elseif C_GuildInfo and C_GuildInfo.Demote then C_GuildInfo.Demote(member.name)
-                end
+                if C_GuildInfo and C_GuildInfo.Demote then C_GuildInfo.Demote(member.name) end
             end)
         end
         if canRemove then

@@ -24,7 +24,7 @@ local function EnsureTeamChannel(groupId)
     if g.channelId and GH.DB:GetChat(g.channelId) then
         return g.channelId
     end
-    local myName     = GH:GetPlayerName()
+    local myName     = GH:GetFullPlayerName()
     local chanMembers = {}
     local hasMe      = false
     for _, n in ipairs(g.members or {}) do
@@ -139,16 +139,31 @@ function UI:CreateTeamsTab(parent)
         if selected then GH.UI:ShowTeamApplicationsDialog(selected) end
     end)
 
+    -- Tab-strip scroll arrows (mirrors the Chat tab's < > navigation)
+    local tabScrollRBtn = S:Button(tabStrip, ">", 22, 26)
+    tabScrollRBtn:SetPoint("RIGHT", appsBtn, "LEFT", -8, 0)
+    tabScrollRBtn:SetScript("OnClick", function()
+        local sf = frame.tabScrollFrame
+        if sf then
+            local max = sf:GetHorizontalScrollRange()
+            sf:SetHorizontalScroll(math.min(max, sf:GetHorizontalScroll() + 120))
+        end
+    end)
+
+    local tabScrollLBtn = S:Button(tabStrip, "<", 22, 26)
+    tabScrollLBtn:SetPoint("RIGHT", tabScrollRBtn, "LEFT", -2, 0)
+    tabScrollLBtn:SetScript("OnClick", function()
+        local sf = frame.tabScrollFrame
+        if sf then
+            sf:SetHorizontalScroll(math.max(0, sf:GetHorizontalScroll() - 120))
+        end
+    end)
+
     -- Tab container (fills left portion of strip, horizontal scroll)
     local tabScrollFrame = CreateFrame("ScrollFrame", nil, tabStrip)
-    tabScrollFrame:SetPoint("TOPLEFT",    tabStrip, "TOPLEFT",    2, 0)
-    tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip, "BOTTOMLEFT", 2, 0)
-    tabScrollFrame:SetPoint("RIGHT",      appsBtn,  "LEFT",       -8, 0)
-    tabScrollFrame:EnableMouseWheel(true)
-    tabScrollFrame:SetScript("OnMouseWheel", function(sf, delta)
-        local max = sf:GetHorizontalScrollRange()
-        sf:SetHorizontalScroll(math.max(0, math.min(max, sf:GetHorizontalScroll() - delta * 80)))
-    end)
+    tabScrollFrame:SetPoint("TOPLEFT",    tabStrip,      "TOPLEFT",    2, 0)
+    tabScrollFrame:SetPoint("BOTTOMLEFT", tabStrip,      "BOTTOMLEFT", 2, 0)
+    tabScrollFrame:SetPoint("RIGHT",      tabScrollLBtn, "LEFT",       -4, 0)
     frame.tabScrollFrame = tabScrollFrame
 
     local tabArea = CreateFrame("Frame", nil, tabScrollFrame)
@@ -515,7 +530,7 @@ function UI:ShowTeamView(groupId)
     if not g then return end
 
     -- Determine membership and management status
-    local myName    = GH:GetPlayerName()
+    local myName    = GH:GetFullPlayerName()
     local isMember  = false
     for _, n in ipairs(g.members or {}) do
         if n == myName then isMember = true; break end
@@ -651,7 +666,7 @@ function UI:RefreshTeamRoster(groupId)
             row.dot:SetColorTexture(S.COLOR.OFFLINE[1], S.COLOR.OFFLINE[2], S.COLOR.OFFLINE[3], 0.5)
         end
 
-        row.nameFS:SetText(m.name)
+        row.nameFS:SetText(m.name:match("^([^%-]+)") or m.name)
         row.nameFS:SetTextColor(cr, cg, cb)
 
         -- Role badge (officers/team managers only)
@@ -1021,7 +1036,7 @@ function UI:ShowTeamMembersDialog(groupId)
             for i = 1, numC do select(i, sugC:GetChildren()):Hide() end
             for _, member in ipairs(matches) do
                 if shown >= 6 then break end
-                if member.online and not IsMember(member.name) then
+                if member.online and not IsMember(member.fullName) then
                     shown = shown + 1
                     local r = sugRows[shown]
                     if not r then

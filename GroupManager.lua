@@ -51,7 +51,7 @@ function Groups:Initialize()
         if not GH:IsInGuild() then return end
         -- Stop retrying once we already have at least one team with our name.
         if attempt > 1 then
-            local myName = GH:GetPlayerName()
+            local myName = GH:GetFullPlayerName()
             for _, g in pairs(GH.DB:GetGroups()) do
                 for _, n in ipairs(g.members or {}) do
                     if n == myName then return end
@@ -70,8 +70,9 @@ function Groups:Initialize()
     -- Fires once, 20s after login (roster is populated by then via GUILD_ROSTER_UPDATE).
     -- Sends are staggered 200 ms apart to avoid flooding the addon message queue.
     C_Timer.After(20, function()
+        Groups:NormalizeMemberNames()
         if not GH:CanManageTeams() then return end
-        local myName = GH:GetPlayerName()
+        local myName = GH:GetFullPlayerName()
         local delay  = 0
         -- Existing: push TMSYN to online team members
         for groupId, g in pairs(GH.DB:GetGroups()) do
@@ -109,7 +110,7 @@ end
 -- ── Basic group CRUD ──────────────────────────────────────────────────────
 
 function Groups:GetAll()
-    local myName    = GH:GetPlayerName()
+    local myName    = GH:GetFullPlayerName()
     local isOfficer = GH:IsOfficer()
     local out        = {}
     local includedIds = {}
@@ -192,7 +193,7 @@ end
 -- Used by the Teams tab to render the full team browser including Apply buttons.
 -- GetAll() is unchanged and continues to be used everywhere else.
 function Groups:GetAllForBrowsing()
-    local myName    = GH:GetPlayerName()
+    local myName    = GH:GetFullPlayerName()
     local isOfficer = GH:IsOfficer()
 
     -- Start with the regular GetAll result and tag each entry.
@@ -233,9 +234,9 @@ function Groups:Create(name)
     local _, _, rankIndex = GetGuildInfo("player")
     GH.DB:SaveGroup(id, {
         name        = name,
-        members     = { GH:GetPlayerName() },
+        members     = { GH:GetFullPlayerName() },
         color       = "7289DA",
-        creator     = GH:GetPlayerName(),
+        creator     = GH:GetFullPlayerName(),
         creatorRank = rankIndex or 1,
         createdAt   = time(),
     })
@@ -260,7 +261,7 @@ end
 function Groups:Delete(id)
     local g = GH.DB:GetGroups()[id]
     if g then
-        local myName = GH:GetPlayerName()
+        local myName = GH:GetFullPlayerName()
         for _, memberName in ipairs(g.members or {}) do
             if memberName ~= myName then
                 Groups:_SendRemoved(id, memberName)
@@ -309,7 +310,7 @@ end
 function Groups:InviteAll(id, roles)
     local g = GH.DB:GetGroups()[id]
     if not g then return end
-    local myName = GH:GetPlayerName()
+    local myName = GH:GetFullPlayerName()
     local doInvite = InviteUnit
                   or (C_PartyInfo and C_PartyInfo.InviteUnit)
     if not doInvite then return end
@@ -356,6 +357,11 @@ function Groups:SetMemberRole(groupId, memberName, role)
     GH.DB:SaveGroup(groupId, g)
     local payload = table.concat({ TM_ROL, groupId, memberName, role or "" }, SEP)
     Groups:_Send(payload)
+    GH.ActivityLog:Add(GH.ActivityLog.TYPES.TEAM_ROLE, memberName, nil, {
+        role     = role or "",
+        group    = g.name,
+        assigner = GH:GetPlayerName(),
+    })
     if GH.UI then GH.UI:RefreshTeamRoster(groupId) end
 end
 
@@ -384,15 +390,13 @@ function Groups:SendInvite(groupId, targetName)
     end
     local g = Groups:Get(groupId)
     if not g then return false end
-    -- Use canonical short name for the roster entry
-    local canonical = memberInfo.name
+    local canonical = memberInfo.fullName
     for _, n in ipairs(g.members or {}) do
         if n == canonical then
             print("|cff7289daGuildHub:|r " .. canonical .. " is already on this team.")
             return false
         end
     end
-    -- Payload target field uses short name; receiver compares against UnitName("player")
     local payload = table.concat(
         { TM_INV, groupId, g.name, GH:GetPlayerName(), canonical }, SEP)
     Groups:_Send(payload)
@@ -407,7 +411,7 @@ function Groups:AcceptInvite(groupId)
     local invite = Groups.pendingInvites[groupId]
     if not invite then return end
     Groups.pendingInvites[groupId] = nil
-    local payload = table.concat({ TM_ACC, groupId, GH:GetPlayerName() }, SEP)
+    local payload = table.concat({ TM_ACC, groupId, GH:GetFullPlayerName() }, SEP)
     Groups:_Send(payload)
     print("|cff7289daGuildHub:|r You joined team |cffffd700" .. invite.teamName .. "|r!")
 end
@@ -417,14 +421,14 @@ function Groups:DeclineInvite(groupId)
     local invite = Groups.pendingInvites[groupId]
     if not invite then return end
     Groups.pendingInvites[groupId] = nil
-    local payload = table.concat({ TM_DEC, groupId, GH:GetPlayerName() }, SEP)
+    local payload = table.concat({ TM_DEC, groupId, GH:GetFullPlayerName() }, SEP)
     Groups:_Send(payload)
 end
 
 -- Broadcast a check request; online officers respond with each team this player is on.
 function Groups:RequestTeamSync()
     if not GH:IsInGuild() then return end
-    local payload = table.concat({ TM_CHK, GH:GetPlayerName() }, SEP)
+    local payload = table.concat({ TM_CHK, GH:GetFullPlayerName() }, SEP)
     Groups:_Send(payload)
 end
 
@@ -448,6 +452,50 @@ function Groups:_SyncToMember(groupId, g, targetName)
             { TM_SYN, groupId, g.name, "", g.channelId or "", targetName }, SEP)
     end
     Groups:_Send(payload)
+end
+
+function Groups:NormalizeMemberNames()
+    for id, g in pairs(GH.DB:GetGroups()) do
+        local changed = false
+        for i, name in ipairs(g.members or {}) do
+            if not name:find("-", 1, true) then
+                local m = GH.GuildData:FindMember(name)
+                if m and m.fullName ~= name then
+                    g.members[i] = m.fullName
+                    changed = true
+                end
+            end
+        end
+        if g.creator and not g.creator:find("-", 1, true) then
+            local m = GH.GuildData:FindMember(g.creator)
+            if m and m.fullName ~= g.creator then
+                g.creator = m.fullName
+                changed = true
+            end
+        end
+        if g.memberRoles then
+            local newRoles = {}
+            local rolesChanged = false
+            for memberName, role in pairs(g.memberRoles) do
+                if not memberName:find("-", 1, true) then
+                    local m = GH.GuildData:FindMember(memberName)
+                    if m and m.fullName ~= memberName then
+                        newRoles[m.fullName] = role
+                        rolesChanged = true
+                    else
+                        newRoles[memberName] = role
+                    end
+                else
+                    newRoles[memberName] = role
+                end
+            end
+            if rolesChanged then
+                g.memberRoles = newRoles
+                changed = true
+            end
+        end
+        if changed then GH.DB:SaveGroup(id, g) end
+    end
 end
 
 function Groups:_CheckForDuplicate(incomingId, incomingName)
@@ -579,7 +627,7 @@ function Groups:OnAddonMessage(payload, _)
     if #parts < 1 then return end
 
     local msgType = parts[1]
-    local myName  = GH:GetPlayerName()
+    local myName  = GH:GetFullPlayerName()
 
     -- ── TMINV: team invite addressed to us ───────────────────────────────
     if msgType == TM_INV then

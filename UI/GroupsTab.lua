@@ -231,7 +231,7 @@ function UI:RefreshGroupDetail(groupId)
 
         local nameLabel = S:FS(row, "OVERLAY", "normal")
         nameLabel:SetPoint("LEFT", row, "LEFT", 20, 0)
-        nameLabel:SetText(memberName)
+        nameLabel:SetText(memberName:match("^([^%-]+)") or memberName)
         nameLabel:SetTextColor(cr, cg, cb)
 
         if info and info.rank then
