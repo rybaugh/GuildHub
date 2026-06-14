@@ -55,6 +55,11 @@ local SORT_MAP = {
     end,
 }
 
+local function ToHex(r, g, b)
+    return string.format("%02x%02x%02x",
+        math.floor(r * 255), math.floor(g * 255), math.floor(b * 255))
+end
+
 function UI:CreateMembersTab(parent)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints(parent)
@@ -811,6 +816,29 @@ function UI:RefreshMembersTab()
     end
 
     content:SetHeight(math.max(totalH, 10))
+
+    if frame.countLabel then
+        local total  = GetNumGuildMembers() or 0
+        local online = 0
+        for _, m in ipairs(GH.GuildData.members) do
+            if m.online then online = online + 1 end
+        end
+
+        local onlineStr = string.format("|cff%s%d online|r",
+            ToHex(S.COLOR.ACCENT[1], S.COLOR.ACCENT[2], S.COLOR.ACCENT[3]), online)
+
+        local tr, tg, tb
+        if total >= 950 then
+            tr, tg, tb = S.COLOR.RED[1], S.COLOR.RED[2], S.COLOR.RED[3]
+        elseif total >= 900 then
+            tr, tg, tb = 1, 0.85, 0.1
+        else
+            tr, tg, tb = S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3]
+        end
+        local totalStr = string.format("|cff%s%d / 1000|r", ToHex(tr, tg, tb), total)
+
+        frame.countLabel:SetText(onlineStr .. " · " .. totalStr)
+    end
 
 end
 
