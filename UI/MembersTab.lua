@@ -8,7 +8,7 @@ local UI = GH.UI
 local CreateFrame        = _G.CreateFrame
 local ChatFrame_OpenChat = rawget(_G, "ChatFrame_OpenChat")
 local GameTooltip        = rawget(_G, "GameTooltip")
-local GetNumGuildMembers = _G.GetNumGuildMembers
+local GetNumGuildMembers = rawget(_G, "GetNumGuildMembers")
 
 -- Column layout
 local COLS = {
