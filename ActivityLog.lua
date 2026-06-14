@@ -31,6 +31,7 @@ ActivityLog.TYPES = {
     BAN             = "BAN",
     UNBAN           = "UNBAN",
     NAME_CHANGE     = "NAME_CHANGE",
+    TEAM_ROLE       = "TEAM_ROLE",
 }
 
 -- Icons used in the Activity tab UI.
@@ -48,6 +49,7 @@ ActivityLog.TYPE_ICON = {
     BAN          = "Interface/Icons/Spell_Shadow_ShadowWordPain",
     UNBAN        = "Interface/Icons/Spell_Holy_BlessingOfSalvation",
     NAME_CHANGE  = "Interface/Icons/INV_Misc_QuestionMark",
+    TEAM_ROLE    = "Interface/Icons/Achievement_GuildPerk_WorkingAsATeam",
 }
 
 -- ── Initialisation ────────────────────────────────────────────────────────────
@@ -100,7 +102,11 @@ function ActivityLog:_BuildSnapshot()
     for i = 1, total do
         local name, rankName, rankIndex, level, _, _, note, officerNote = GetGuildRosterInfo(i)
         if name then
-            snap[name] = {
+            -- Strip realm suffix ("Name-Realm" -> "Name") so the snapshot keys are
+            -- consistent regardless of whether WoW returns realm-qualified names,
+            -- which varies by version and can change mid-patch for same-realm members.
+            local shortName = name:match("^([^%-]+)") or name
+            snap[shortName] = {
                 rankName    = rankName or "",
                 rankIndex   = rankIndex or 0,
                 level       = level or 1,
@@ -219,11 +225,16 @@ function ActivityLog:_PruneSpuriousLoginEvents()
         end
     end
 
-    -- 5+ events at the same second is impossible organically; mark as spurious.
+    -- Only treat a timestamp as spurious if a wildly improbable number of
+    -- JOIN/LEAVE events share it — e.g. the entire guild appeared at once due
+    -- to a snapshot-against-empty-prev bug.  Threshold: half the guild size
+    -- (min 15) so legitimate mass-invite or end-of-raid departures survive.
+    local guildSize = GetNumGuildMembers and GetNumGuildMembers() or 100
+    local threshold = math.max(15, math.floor(guildSize * 0.5))
     local spurious = {}
     local found    = false
     for ts, count in pairs(tsCounts) do
-        if count >= 5 then
+        if count >= threshold then
             spurious[ts] = true
             found = true
         end
@@ -328,6 +339,14 @@ function ActivityLog:FormatEntry(entry)
         return p .. " ban was removed"
     elseif t == self.TYPES.NAME_CHANGE then
         return p .. " changed their name"
+    elseif t == self.TYPES.TEAM_ROLE then
+        local group = d.group and (" [" .. d.group .. "]") or ""
+        local by    = d.assigner and (" by " .. d.assigner) or ""
+        if d.role and d.role ~= "" then
+            return p .. " assigned role: " .. d.role .. group .. by
+        else
+            return p .. " role cleared" .. group .. by
+        end
     end
     return p .. " — " .. (t or "unknown event")
 end

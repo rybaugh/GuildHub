@@ -119,10 +119,45 @@ function UI:CreateProfilePanel(parent)
     panel.rankHistHdr,     panel.rankHistLine     = MakeSectionHdr("Rank History")
     panel.rankHistFS = MakeFS()
     panel.rankHistFS:SetSpacing(3)
-    panel.promoteBtn = S:Button(content, "Promote", bw, 24)
-    panel.demoteBtn  = S:DangerButton(content, "Demote", bw, 24)
-    panel.promoteBtn:Hide()
-    panel.demoteBtn:Hide()
+
+    local rankDropW = PANEL_W - 26
+    local rankDropBtn = CreateFrame("Button", nil, content)
+    rankDropBtn:SetSize(rankDropW, 24)
+    local rdbg = rankDropBtn:CreateTexture(nil, "BACKGROUND")
+    rdbg:SetAllPoints()
+    rdbg:SetColorTexture(S.COLOR.INPUT_BG[1], S.COLOR.INPUT_BG[2], S.COLOR.INPUT_BG[3], 1)
+    local rdBdr = rankDropBtn:CreateTexture(nil, "BORDER")
+    rdBdr:SetAllPoints()
+    rdBdr:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.55)
+    local rdLabel = S:FS(rankDropBtn, "OVERLAY")
+    rdLabel:SetPoint("LEFT",  rankDropBtn, "LEFT",   8, 0)
+    rdLabel:SetPoint("RIGHT", rankDropBtn, "RIGHT", -22, 0)
+    rdLabel:SetJustifyH("LEFT")
+    rankDropBtn.labelFS = rdLabel
+    local rdArrow = S:FS(rankDropBtn, "OVERLAY", "normal")
+    rdArrow:SetPoint("RIGHT", rankDropBtn, "RIGHT", -6, 0)
+    rdArrow:SetText("▾")
+    rdArrow:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    rankDropBtn:SetScript("OnEnter", function()
+        rdbg:SetColorTexture(S.COLOR.PANEL[1]+0.06, S.COLOR.PANEL[2]+0.06, S.COLOR.PANEL[3]+0.08, 1)
+    end)
+    rankDropBtn:SetScript("OnLeave", function()
+        rdbg:SetColorTexture(S.COLOR.INPUT_BG[1], S.COLOR.INPUT_BG[2], S.COLOR.INPUT_BG[3], 1)
+    end)
+    rankDropBtn:Hide()
+    panel.rankDropBtn = rankDropBtn
+
+    local rankPopup = CreateFrame("Frame", nil, UIParent)
+    rankPopup:SetFrameStrata("DIALOG")
+    rankPopup:SetWidth(rankDropW)
+    rankPopup:Hide()
+    S:Bg(rankPopup, S.COLOR.BG[1]+0.03, S.COLOR.BG[2]+0.03, S.COLOR.BG[3]+0.04, 0.98)
+    local rpBdr = rankPopup:CreateTexture(nil, "BORDER")
+    rpBdr:SetAllPoints()
+    rpBdr:SetColorTexture(S.COLOR.BORDER[1], S.COLOR.BORDER[2], S.COLOR.BORDER[3], 0.65)
+    panel.rankPopup = rankPopup
+
+    panel:HookScript("OnHide", function() rankPopup:Hide() end)
 
     panel.customNoteHdr,   panel.customNoteLine   = MakeSectionHdr("Custom Note")
     panel.noteBox = S:EditBox(content, PANEL_W - 26, 64, 150)
@@ -212,11 +247,9 @@ function UI:CreateProfilePanel(parent)
         -- Rank History
         placeSection(self.rankHistHdr, self.rankHistLine)
         placeFS(self.rankHistFS)
-        if self.promoteBtn:IsShown() or self.demoteBtn:IsShown() then
-            self.promoteBtn:ClearAllPoints()
-            self.promoteBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y - 2)
-            self.demoteBtn:ClearAllPoints()
-            self.demoteBtn:SetPoint("LEFT", self.promoteBtn, "RIGHT", 4, 0)
+        if self.rankDropBtn:IsShown() then
+            self.rankDropBtn:ClearAllPoints()
+            self.rankDropBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 8, y - 2)
             y = y - 30
         end
 
@@ -374,31 +407,117 @@ function UI:ShowProfilePanel(memberData)
         panel.rankHistFS:SetText(table.concat(lines, "\n"))
     end
 
-    -- Promote / Demote
+    -- Rank management dropdown
     local isSelf = (memberData.fullName == GH:GetPlayerName() or memberData.name == GH:GetPlayerName())
-    panel.promoteBtn:SetShown(not isSelf and GH:CanGuildPromote(memberData.rankIndex))
-    panel.demoteBtn:SetShown(not isSelf and GH:CanGuildDemote(memberData.rankIndex))
+    local canPromote = not isSelf and GH:CanGuildPromote(memberData.rankIndex)
+    local canDemote  = not isSelf and GH:CanGuildDemote(memberData.rankIndex)
 
-    local function RankAction(apiFn)
-        if memberData.rosterIndex then
-            apiFn(memberData.rosterIndex)
-            if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
-            C_Timer.After(0.3, function()
-                for _, m in ipairs(GH.GuildData:GetMembers()) do
-                    if m.fullName == memberData.fullName then
-                        UI:ShowProfilePanel(m)
-                        break
+    panel.rankPopup:Hide()
+    panel.rankDropBtn:SetShown(canPromote or canDemote)
+    if canPromote or canDemote then
+        panel.rankDropBtn.labelFS:SetText("Set Rank: " .. (memberData.rank or "?") .. " ▾")
+        panel.rankDropBtn.labelFS:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+
+        panel.rankDropBtn:SetScript("OnClick", function()
+            local popup = panel.rankPopup
+            if popup:IsShown() then popup:Hide(); return end
+
+            for i = popup:GetNumChildren(), 1, -1 do
+                select(i, popup:GetChildren()):Hide()
+            end
+
+            local _, _, myRankIndex = GetGuildInfo("player")
+            local numRanks = GuildControlGetNumRanks and GuildControlGetNumRanks() or 0
+            local ROW_H = 24
+            local rows = {}
+
+            for i = 1, numRanks do
+                local targetRankIndex = i - 1
+                if targetRankIndex > 0 then
+                    local rankName = (GuildControlGetRankName and GuildControlGetRankName(i)) or ("Rank " .. targetRankIndex)
+                    local isCurrent = (targetRankIndex == memberData.rankIndex)
+                    local show = false
+                    if isCurrent then
+                        show = true
+                    elseif targetRankIndex < memberData.rankIndex and canPromote then
+                        if myRankIndex == 0 or (myRankIndex and myRankIndex < targetRankIndex) then
+                            show = true
+                        end
+                    elseif targetRankIndex > memberData.rankIndex and canDemote then
+                        show = true
+                    end
+                    if show then
+                        rows[#rows + 1] = {
+                            name      = rankName,
+                            isCurrent = isCurrent,
+                            steps     = memberData.rankIndex - targetRankIndex,
+                        }
                     end
                 end
-            end)
-        end
+            end
+
+            if #rows == 0 then return end
+            popup:SetHeight(math.min(#rows, 8) * ROW_H + 4)
+
+            for idx, info in ipairs(rows) do
+                if idx > 8 then break end
+                local row = CreateFrame("Button", nil, popup)
+                row:SetPoint("TOPLEFT", popup, "TOPLEFT", 1, -(idx - 1) * ROW_H - 2)
+                row:SetSize(panel.rankDropBtn:GetWidth() - 2, ROW_H)
+                row:Show()
+                local rbg = row:CreateTexture(nil, "BACKGROUND")
+                rbg:SetAllPoints()
+                rbg:SetColorTexture(0, 0, 0, 0)
+                local rfs = S:FS(row, "OVERLAY")
+                rfs:SetPoint("LEFT", row, "LEFT", 8, 0)
+                if info.isCurrent then
+                    rfs:SetText("• " .. info.name)
+                    rfs:SetTextColor(S.COLOR.TEXT_GOLD[1], S.COLOR.TEXT_GOLD[2], S.COLOR.TEXT_GOLD[3])
+                    row:EnableMouse(false)
+                else
+                    rfs:SetText(info.name)
+                    rfs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+                    row:SetScript("OnEnter", function()
+                        rbg:SetColorTexture(S.COLOR.NAV_ACTIVE[1], S.COLOR.NAV_ACTIVE[2], S.COLOR.NAV_ACTIVE[3], 0.85)
+                        rfs:SetTextColor(1, 1, 1)
+                    end)
+                    row:SetScript("OnLeave", function()
+                        rbg:SetColorTexture(0, 0, 0, 0)
+                        rfs:SetTextColor(S.COLOR.TEXT[1], S.COLOR.TEXT[2], S.COLOR.TEXT[3])
+                    end)
+                    local captInfo  = info
+                    local captName  = memberData.name
+                    local captFull  = memberData.fullName
+                    row:SetScript("OnClick", function()
+                        popup:Hide()
+                        if captInfo.steps > 0 then
+                            for _ = 1, captInfo.steps do
+                                if C_GuildInfo and C_GuildInfo.Promote then C_GuildInfo.Promote(captName) end
+                            end
+                        elseif captInfo.steps < 0 then
+                            for _ = 1, -captInfo.steps do
+                                if C_GuildInfo and C_GuildInfo.Demote then C_GuildInfo.Demote(captName) end
+                            end
+                        end
+                        if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
+                        C_Timer.After(0.5, function()
+                            for _, m in ipairs(GH.GuildData:GetMembers()) do
+                                if m.fullName == captFull then
+                                    UI:ShowProfilePanel(m)
+                                    break
+                                end
+                            end
+                        end)
+                    end)
+                end
+            end
+
+            popup:ClearAllPoints()
+            popup:SetPoint("TOPLEFT", panel.rankDropBtn, "BOTTOMLEFT", 0, -2)
+            popup:Show()
+            popup:Raise()
+        end)
     end
-    panel.promoteBtn:SetScript("OnClick", function()
-        RankAction(GuildRosterPromote)
-    end)
-    panel.demoteBtn:SetScript("OnClick", function()
-        RankAction(GuildRosterDemote)
-    end)
 
     -- Custom note
     panel.noteBox:SetText(profile.customNote or "")

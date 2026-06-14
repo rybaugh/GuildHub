@@ -198,15 +198,31 @@ local function MakePicker(parent, x, y, w, placeholder, getItemsFn)
 
     local labelFS = S:FS(btn, "OVERLAY")
     labelFS:SetPoint("LEFT", btn, "LEFT", 8, 0)
-    labelFS:SetPoint("RIGHT", btn, "RIGHT", -22, 0)
+    labelFS:SetPoint("RIGHT", btn, "RIGHT", -26, 0)
     labelFS:SetJustifyH("LEFT")
     labelFS:SetText(placeholder)
     labelFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
+    -- Tinted arrow area
+    local arrowAreaBg = btn:CreateTexture(nil, "ARTWORK")
+    arrowAreaBg:SetPoint("TOPRIGHT",    btn, "TOPRIGHT",    0, 0)
+    arrowAreaBg:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+    arrowAreaBg:SetWidth(24)
+    arrowAreaBg:SetColorTexture(0, 0, 0, 0.30)
+
+    -- Separator line between label and arrow area
+    local arrowSep = btn:CreateTexture(nil, "ARTWORK")
+    arrowSep:SetSize(1, 16)
+    arrowSep:SetPoint("RIGHT", arrowAreaBg, "LEFT", 0, 0)
+    arrowSep:SetColorTexture(
+        S.COLOR.BORDER[1] + 0.18,
+        S.COLOR.BORDER[2] + 0.18,
+        S.COLOR.BORDER[3] + 0.22, 0.9)
+
     local arrowFS = S:FS(btn, "OVERLAY", "normal")
     arrowFS:SetPoint("RIGHT", btn, "RIGHT", -6, 0)
     arrowFS:SetText("▾")
-    arrowFS:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+    arrowFS:SetTextColor(0.58, 0.64, 0.88)
 
     btn:SetScript("OnEnter", function()
         bbg:SetColorTexture(S.COLOR.PANEL[1]+0.06, S.COLOR.PANEL[2]+0.06, S.COLOR.PANEL[3]+0.08, 1)
@@ -542,7 +558,7 @@ function UI:CreateLFMTab(parent)
     local pp = CreateFrame("Frame", nil, frame)
     pp:SetPoint("TOPLEFT",  frame, "TOPLEFT",  PAD, -PAD)
     pp:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -PAD)
-    pp:SetHeight(192)
+    pp:SetHeight(208)
     S:GradientBg(pp, "VERTICAL",
         S.COLOR.PANEL_HDR_T[1], S.COLOR.PANEL_HDR_T[2], S.COLOR.PANEL_HDR_T[3], 1,
         S.COLOR.PANEL[1],       S.COLOR.PANEL[2],       S.COLOR.PANEL[3],       1)
@@ -563,24 +579,24 @@ function UI:CreateLFMTab(parent)
 
     -- Row 1: activity type toggles
     local actLbl = S:FS(pp, "OVERLAY")
-    actLbl:SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -32)
+    actLbl:SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -38)
     actLbl:SetText("Activity:")
     actLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
     -- Row 2: note / description field
     local descLbl = S:FS(pp, "OVERLAY")
-    descLbl:SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -60)
+    descLbl:SetPoint("TOPLEFT", pp, "TOPLEFT", 10, -72)
     descLbl:SetText("Title:")
     descLbl:SetTextColor(S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
 
     local descBox = S:EditBox(pp, 0, 22, 80)
-    descBox:SetPoint("TOPLEFT",  pp, "TOPLEFT",  52, -64)
-    descBox:SetPoint("TOPRIGHT", pp, "TOPRIGHT", -10, -64)
+    descBox:SetPoint("TOPLEFT",  pp, "TOPLEFT",  52, -76)
+    descBox:SetPoint("TOPRIGHT", pp, "TOPRIGHT", -10, -76)
     frame._descBox = descBox
 
     -- Row 3: role section (instance picker + role cards)
     -- All three sub-frames are anchored at the same spot; only one is visible at a time.
-    local ROLE_Y   = -92    -- top of role row within pp
+    local ROLE_Y   = -108   -- top of role row within pp
     local CW       = 80     -- card width
     local CG       = 8      -- card gap
     local INST_W   = 155   -- instance picker width
@@ -686,7 +702,7 @@ function UI:CreateLFMTab(parent)
     for _, actType in ipairs(GH.Recruit.ACTIVITY_TYPES) do
         local bw  = (actType == "Battleground") and 108 or 84
         local btn = S:Button(pp, actType, bw, 20)
-        btn:SetPoint("TOPLEFT", pp, "TOPLEFT", tbX, -30)
+        btn:SetPoint("TOPLEFT", pp, "TOPLEFT", tbX, -36)
         local cap = actType
         btn:SetScript("OnClick", function()
             frame._selType = cap

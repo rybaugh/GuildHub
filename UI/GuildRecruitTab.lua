@@ -547,14 +547,22 @@ function UI:_SaveAndPost()
     }
 
     GH.GuildRecruit:SaveSettings(new)
-    GH.GuildRecruit:PostToFinder(new)
+    local posted = GH.GuildRecruit:PostToFinder(new)
     UI:_RefreshRecruitInfo()
 
     -- Flash confirmation
     local fs = frame._updatedFS
     if fs then
-        local saved = CC("Saved!", S.COLOR.GREEN[1], S.COLOR.GREEN[2], S.COLOR.GREEN[3])
-        fs:SetText(saved)
+        local msg
+        if not new.listed then
+            msg = CC("Settings saved.", S.COLOR.TEXT_DIM[1], S.COLOR.TEXT_DIM[2], S.COLOR.TEXT_DIM[3])
+                .. " Enable |cffF2CF00List My Guild in Guild Finder|r to publish."
+        elseif posted then
+            msg = CC("Saved & Listed!", S.COLOR.GREEN[1], S.COLOR.GREEN[2], S.COLOR.GREEN[3])
+        else
+            msg = CC("Saved, but listing failed — see chat for details.", S.COLOR.RED[1], S.COLOR.RED[2], S.COLOR.RED[3])
+        end
+        fs:SetText(msg)
         C_Timer.After(2.5, function() UI:_RefreshRecruitInfo() end)
     end
 end

@@ -73,23 +73,38 @@ end
 function GuildRecruit:PostToFinder(settings)
     if not settings.listed then
         self:_SetFinderListed(false, "")
-        return
+        return false
     end
-    self:_SetFinderListed(true, settings.message or "")
+    return self:_SetFinderListed(true, settings.message or "")
 end
 
 function GuildRecruit:_SetFinderListed(active, message)
-    if not self:HasClubFinderAPI() then return end
+    if not self:HasClubFinderAPI() then
+        if active then
+            print("|cff7289daGuildHub:|r Club Finder API unavailable — click |cffF2CF00Open Finder|r to list your guild manually.")
+        end
+        return false
+    end
     local clubId = GetGuildClubId()
-    if not clubId then return end
-    pcall(function()
-        -- C_ClubFinder.SetClubRecruitmentSettings signature may vary by patch;
-        -- wrap in pcall so a wrong signature doesn't break anything.
+    if not clubId then
+        if active then
+            print("|cff7289daGuildHub:|r Could not find your guild ID. Make sure you are in a guild.")
+        end
+        return false
+    end
+    local ok, err = pcall(function()
         C_ClubFinder.SetClubRecruitmentSettings(clubId, {
             recruitmentMessage = active and (message or "") or "",
             active             = active,
         })
     end)
+    if not ok then
+        if active then
+            print("|cff7289daGuildHub:|r Guild Finder listing failed: " .. tostring(err))
+        end
+        return false
+    end
+    return true
 end
 
 -- ──────────────────────────────────────────────────────────

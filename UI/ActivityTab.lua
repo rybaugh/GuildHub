@@ -25,6 +25,7 @@ local TYPE_COLOR = {
     BAN          = { 0.80, 0.15, 0.15 },
     UNBAN        = { 0.30, 0.75, 0.30 },
     NAME_CHANGE  = { 0.70, 0.70, 0.70 },
+    TEAM_ROLE    = { 0.60, 0.45, 0.90 },  -- purple
 }
 
 local function TypeColor(t)
@@ -38,6 +39,7 @@ function UI:CreateActivityTab(parent, w, h)
     local frame = CreateFrame("Frame", nil, parent)
     frame:SetAllPoints(parent)
     frame:Hide()
+    frame:SetScript("OnShow", function() UI:RefreshActivityTab() end)
     UI.ActivityTab = frame
 
     -- ── Toolbar ───────────────────────────────────────────────────────────────
@@ -83,12 +85,13 @@ function UI:CreateActivityTab(parent, w, h)
     filterBar:SetHeight(26)
 
     local FILTER_TYPES = {
-        { key = "JOIN",     label = "Join",    all = {"JOIN","REJOIN"} },
-        { key = "LEAVE",    label = "Leave",   all = {"LEAVE","KICK"} },
-        { key = "PROMOTE",  label = "Promote", all = {"PROMOTE","DEMOTE"} },
-        { key = "LEVEL_UP", label = "Level",   all = {"LEVEL_UP"} },
-        { key = "NOTE",     label = "Notes",   all = {"NOTE_CHANGE","OFFICER_NOTE"} },
-        { key = "BAN",      label = "Ban",     all = {"BAN","UNBAN","BAN_REJOIN"} },
+        { key = "JOIN",      label = "Join",    all = {"JOIN","REJOIN"} },
+        { key = "LEAVE",     label = "Leave",   all = {"LEAVE","KICK"} },
+        { key = "PROMOTE",   label = "Promote", all = {"PROMOTE","DEMOTE"} },
+        { key = "LEVEL_UP",  label = "Level",   all = {"LEVEL_UP"} },
+        { key = "NOTE",      label = "Notes",   all = {"NOTE_CHANGE","OFFICER_NOTE"} },
+        { key = "BAN",       label = "Ban",     all = {"BAN","UNBAN","BAN_REJOIN"} },
+        { key = "TEAM_ROLE", label = "Teams",   all = {"TEAM_ROLE"} },
     }
 
     local activeFilters = {}  -- key -> true when chip is active
@@ -228,10 +231,8 @@ function UI:RefreshActivityTab()
 
     -- Build active type set
     local typeSet = nil
-    local anyActive = false
     for _, fd in ipairs(filterDefs) do
         if activeFilters[fd.key] then
-            anyActive = true
             typeSet = typeSet or {}
             for _, t in ipairs(fd.all) do typeSet[t] = true end
         end
