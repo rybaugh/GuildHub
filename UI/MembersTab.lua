@@ -820,7 +820,7 @@ function UI:RefreshMembersTab()
     if frame.countLabel then
         local total  = GetNumGuildMembers() or 0
         local online = 0
-        for _, m in ipairs(GH.GuildData.members) do
+        for _, m in ipairs(GH.GuildData.members or {}) do
             if m.online then online = online + 1 end
         end
 
