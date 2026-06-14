@@ -8,6 +8,7 @@ local UI = GH.UI
 local CreateFrame        = _G.CreateFrame
 local ChatFrame_OpenChat = rawget(_G, "ChatFrame_OpenChat")
 local GameTooltip        = rawget(_G, "GameTooltip")
+local GetNumGuildMembers = _G.GetNumGuildMembers
 
 -- Column layout
 local COLS = {
@@ -113,6 +114,11 @@ function UI:CreateMembersTab(parent)
     banListBtn:SetPoint("LEFT", macroBtn, "RIGHT", 4, 0)
     banListBtn:SetScript("OnClick", function() UI:ShowBanListDialog() end)
     frame.banListBtn = banListBtn
+
+    local countLabel = S:FS(toolbar, "OVERLAY")
+    countLabel:SetPoint("RIGHT", toolbar, "RIGHT", 0, 0)
+    countLabel:SetJustifyH("RIGHT")
+    frame.countLabel = countLabel
 
     local function UpdateProfileButtons()
         local enabled = GH.DB:GetSetting("rosterProfilesEnabled") ~= false
